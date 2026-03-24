@@ -336,60 +336,7 @@ function bmiCat(b){
   return{l:"Obese",c:"#f87171"};
 }
 function isFemale(){return state.gender==="female";}
-// API-based risk calculation
-async function calcRiskFromAPI(){
-  const payload = {
-    gender: state.gender,
-    age: state.age,
-    weight: state.weight,
-    height: state.height,
-    waist: state.waist,
-    pregnancies: state.pregnancies || "0",
-    bp: state.bp,
-    relatives: state.relatives,
-    othersClose: state.othersClose,
-    sugar: state.sugar,
-    medicines: state.medicines
-  };
-
-  try {
-    const response = await fetch('/api/predict', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
-
-    if (data.success) {
-      const pct = Math.round(data.prediction.percentage);
-      let color = "#4ade80"; // green
-      if (pct >= 75) color = "#f87171"; // red
-      else if (pct >= 50) color = "#fb923c"; // orange
-      else if (pct >= 25) color = "#facc15"; // yellow
-
-      return {
-        level: data.prediction.category,
-        color: color,
-        pct: pct,
-        riskFactors: data.risk_factors || [],
-        recommendations: data.recommendations || [],
-        futureRisk: data.future_risk || {},
-        inputAnalysis: data.input_analysis || {},
-        clinicalSummary: data.clinical_summary || ''
-      };
-    } else {
-      console.error('API Error:', data.error);
-      return calcRiskFallback();
-    }
-  } catch (error) {
-    console.error('Network Error:', error);
-    return calcRiskFallback();
-  }
-}
-
-// Fallback calculation (client-side) if API fails
-function calcRiskFallback(){
+function calcRisk(){
   const b=bmi(),p=pedigree();
   let s=0;
   if(parseFloat(state.age)>45)s+=2;
@@ -399,10 +346,10 @@ function calcRiskFallback(){
   if(parseFloat(state.bp)>90)s+=2;
   if(p>1)s+=3; else if(p>.5)s+=2; else if(p>0)s+=1;
   s+=state.medicines.length;
-  if(s<=2)return{level:"Low",color:"#4ade80",pct:18,riskFactors:[],recommendations:[]};
-  if(s<=5)return{level:"Moderate",color:"#facc15",pct:45,riskFactors:[],recommendations:[]};
-  if(s<=8)return{level:"High",color:"#fb923c",pct:72,riskFactors:[],recommendations:[]};
-  return{level:"Very High",color:"#f87171",pct:91,riskFactors:[],recommendations:[]};
+  if(s<=2)return{level:"Low",color:"#4ade80",pct:18};
+  if(s<=5)return{level:"Moderate",color:"#facc15",pct:45};
+  if(s<=8)return{level:"High",color:"#fb923c",pct:72};
+  return{level:"Very High",color:"#f87171",pct:91};
 }
 
 // ── Validation ──
@@ -612,36 +559,17 @@ function renderSummary(){
 function renderResult(){
   const r=state.risk,b=bmi(),p=pedigree();
   const sm=MEDS.filter(m=>state.medicines.includes(m.id));
-
-  // Use API-provided risk factors if available, otherwise generate locally
-  let factors = [];
-  if (r.riskFactors && r.riskFactors.length > 0) {
-    factors = r.riskFactors.map(rf => ({
-      t: rf.factor,
-      c: rf.severity === 'high' ? '#f87171' : rf.severity === 'moderate' ? '#facc15' : '#4ade80'
-    }));
-  } else {
-    if(parseFloat(state.age)>45)factors.push({t:"Age above 45",c:"#38bdf8"});
-    if(b>30)factors.push({t:"BMI in obese range",c:"#f87171"});
-    else if(b>25)factors.push({t:"BMI overweight",c:"#facc15"});
-    if(state.sugar==="High")factors.push({t:"High sugar intake",c:"#fb923c"});
-    if(parseFloat(state.bp)>90)factors.push({t:"Elevated blood pressure",c:"#fb923c"});
-    if(p>1)factors.push({t:"Strong family history",c:"#f87171"});
-    else if(p>0)factors.push({t:"Family history present",c:"#facc15"});
-    if(sm.length>0)factors.push({t:`${sm.length} risk-affecting medication(s)`,c:"#facc15"});
-  }
+  const factors=[];
+  if(parseFloat(state.age)>45)factors.push({t:"Age above 45",c:"#38bdf8"});
+  if(b>30)factors.push({t:"BMI in obese range",c:"#f87171"});
+  else if(b>25)factors.push({t:"BMI overweight",c:"#facc15"});
+  if(state.sugar==="High")factors.push({t:"High sugar intake",c:"#fb923c"});
+  if(parseFloat(state.bp)>90)factors.push({t:"Elevated blood pressure",c:"#fb923c"});
+  if(p>1)factors.push({t:"Strong family history",c:"#f87171"});
+  else if(p>0)factors.push({t:"Family history present",c:"#facc15"});
+  if(sm.length>0)factors.push({t:`${sm.length} risk-affecting medication(s)`,c:"#facc15"});
   if(factors.length===0)factors.push({t:"No major risk factors identified",c:"#4ade80"});
-
-  // Display recommendations from API
-  const recommendations = r.recommendations || [];
-
-  // Future risk from API
-  const futureRisk = r.futureRisk || {};
-
-  // Input analysis from API
-  const analysis = r.inputAnalysis || {};
-
-  return sth("🔬","AI-Powered Risk Assessment","Based on machine learning analysis of your health profile")+
+  return sth("🔬","Risk Assessment Result","Based on your complete health profile")+
   `<div class="rmain">
     <div>
       <svg class="gsv" viewBox="0 0 200 115">
@@ -664,9 +592,9 @@ function renderResult(){
         </div>
       </div>
       <div class="rstats">
-        <div class="rsi"><span class="rsl">BMI</span><span class="rsv">${analysis.bmi || b}</span></div>
-        <div class="rsi"><span class="rsl">Pedigree</span><span class="rsv">${analysis.pedigree_score !== undefined ? analysis.pedigree_score.toFixed(2) : p.toFixed(2)}</span></div>
-        <div class="rsi"><span class="rsl">Glucose*</span><span class="rsv">${analysis.glucose_estimate || '—'}</span></div>
+        <div class="rsi"><span class="rsl">BMI</span><span class="rsv">${b}</span></div>
+        <div class="rsi"><span class="rsl">Pedigree</span><span class="rsv">${p.toFixed(2)}</span></div>
+        <div class="rsi"><span class="rsl">Meds</span><span class="rsv">${sm.length}</span></div>
       </div>
     </div>
   </div>
@@ -674,33 +602,7 @@ function renderResult(){
     <div class="ftitle">⚡ Detected Risk Factors</div>
     <div class="flist">${factors.map(f=>`<span class="ftag" style="color:${f.c};background:${f.c}12;border:1px solid ${f.c}30">${f.t}</span>`).join("")}</div>
   </div>
-  ${recommendations.length > 0 ? `
-  <div class="fbox" style="background:rgba(74,222,128,.05);border-color:rgba(74,222,128,.15)">
-    <div class="ftitle" style="color:#4ade80">💡 Personalized Recommendations</div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${recommendations.map((rec,i) => `<div style="display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--tx)">
-        <span style="color:#4ade80;font-weight:700">${i+1}.</span>
-        <span>${rec}</span>
-      </div>`).join('')}
-    </div>
-  </div>` : ''}
-  ${Object.keys(futureRisk).length > 0 ? `
-  <div class="fbox" style="background:rgba(124,142,248,.05);border-color:rgba(124,142,248,.15)">
-    <div class="ftitle" style="color:#7c8ef8">📈 Future Risk Projection</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${Object.entries(futureRisk).map(([period, prob]) => {
-        const pct = Math.round(prob * 100);
-        const label = period.replace('_', ' ');
-        let col = pct >= 75 ? '#f87171' : pct >= 50 ? '#fb923c' : pct >= 25 ? '#facc15' : '#4ade80';
-        return `<div style="flex:1;min-width:80px;background:var(--sf3);border:1px solid var(--br);border-radius:var(--rs);padding:12px;text-align:center">
-          <div style="font-size:11px;color:var(--mu);text-transform:uppercase;margin-bottom:4px">${label}</div>
-          <div style="font-size:22px;font-weight:700;color:${col};font-family:var(--fd)">${pct}%</div>
-        </div>`;
-      }).join('')}
-    </div>
-    <p style="font-size:11px;color:var(--mu);margin-top:12px;font-style:italic">*Projections assume no lifestyle changes. Risk can be reduced with preventive measures.</p>
-  </div>` : ''}
-  <div class="disc"><span>🛡️</span><p>This assessment uses a <b>machine learning model</b> trained on clinical data. It provides a <b>screening estimate only</b> and is not a medical diagnosis. Always consult a qualified healthcare professional for clinical evaluation. *Glucose is estimated from risk factors.</p></div>
+  <div class="disc"><span>🛡️</span><p>This tool provides a <b>screening estimate only</b> and is not a medical diagnosis. Always consult a qualified healthcare professional for clinical evaluation and personalised advice.</p></div>
   <button class="breset" id="resetBtn">↺ Start New Assessment</button>`;
 }
 
@@ -756,6 +658,47 @@ function attach(){
     });
   });
 
+  // In-place calc panel update (avoids destroying inputs & losing focus)
+  function updateCalcPanel(){
+    const b=bmi(),bc=bmiCat(b),s=st(b);
+    const pct=b?Math.min(Math.max(((b-10)/40)*100,0),100):0;
+    let panel=document.querySelector(".cpanel");
+    const innerHTML=(b||s)?`
+      <div class="cp-title"><span>⚡</span> Live Calculations</div>
+      <div class="cpgrid">
+        ${b?`<div class="ccard">
+          <div class="ccard-top">
+            <span class="clbl">Body Mass Index</span>
+            ${bc?`<span class="cbadge" style="color:${bc.c};background:${bc.c}18;border:1px solid ${bc.c}33">${bc.l}</span>`:""}
+          </div>
+          <div class="cval" style="color:${bc?.c||"var(--ac)"}">${b}</div>
+          <div class="ctrack">
+            <div class="cfill" style="width:${pct}%;background:${bc?.c||"var(--ac)"}"></div>
+            <div class="cthumb" style="left:${pct}%;background:${bc?.c||"var(--ac)"}"></div>
+          </div>
+          <div class="cscale"><span>10</span><span>18.5</span><span>25</span><span>30</span><span>50</span></div>
+        </div>`:""}
+        ${s!==null&&s>0?`<div class="ccard">
+          <div class="ccard-top">
+            <span class="clbl">Skin Thickness</span>
+            <span class="cformula">0.5×BMI + 0.1×Waist − 5</span>
+          </div>
+          <div class="cval skinval">${s}</div>
+          <div class="cunit-row"><span class="cunit">mm</span><span class="chint">Derived from your measurements</span></div>
+        </div>`:""}
+      </div>`:"";
+    if(panel){
+      if(innerHTML){panel.innerHTML=innerHTML;}
+      else{panel.remove();}
+    } else if(innerHTML){
+      const nav=document.querySelector(".nav-row");
+      const el=document.createElement("div");
+      el.className="cpanel";
+      el.innerHTML=innerHTML;
+      document.getElementById("card").insertBefore(el,nav);
+    }
+  }
+
   // Input sync
   const ids=["age","weight","height","waist","preg","bp"];
   const keys=["age","weight","height","waist","pregnancies","bp"];
@@ -764,7 +707,7 @@ function attach(){
     if(el)el.addEventListener("input",e=>{
       state[keys[i]]=e.target.value;
       state.errors[keys[i]]=undefined;
-      if(["weight","height","waist"].includes(keys[i]))render();
+      if(["weight","height","waist"].includes(keys[i]))updateCalcPanel();
       else renderProg();
     });
   });
@@ -803,23 +746,9 @@ function attach(){
   // Back
   const backBtn=document.getElementById("backBtn");
   if(backBtn)backBtn.addEventListener("click",()=>{state.animDir="bck";state.step--;renderProg();render("bck");});
-  // Predict - async API call
+  // Predict
   const pb=document.getElementById("predictBtn");
-  if(pb)pb.addEventListener("click",async ()=>{
-    pb.disabled = true;
-    pb.innerHTML = '<span>⏳</span> Analyzing...';
-
-    try {
-      state.risk = await calcRiskFromAPI();
-      state.predicted = true;
-      render();
-    } catch (error) {
-      console.error('Prediction error:', error);
-      state.risk = calcRiskFallback();
-      state.predicted = true;
-      render();
-    }
-  });
+  if(pb)pb.addEventListener("click",()=>{state.risk=calcRisk();state.predicted=true;render();});
   // Reset
   const rb=document.getElementById("resetBtn");
   if(rb)rb.addEventListener("click",()=>{
