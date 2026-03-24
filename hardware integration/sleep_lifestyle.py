@@ -8,9 +8,8 @@ Output every analysis cycle:
     ACTIVITY_LEVEL: <0|1|2>   (0=Sedentary, 1=Lightly Active, 2=Active)
 
 Usage:
-    python monitor.py --port COM3
-    python monitor.py --port /dev/ttyUSB0
-    python monitor.py --port COM3 --verbose
+    python monitor.py --port COM5
+    python monitor.py --port COM5 --verbose
 """
 
 import argparse
@@ -40,27 +39,27 @@ else:
 
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * ANALYSIS_WINDOW_SEC
 
-MOTION_SEDENTARY = 0.15
-MOTION_ACTIVE    = 0.50
-MOTION_SLEEP_MAX = 0.15
-MOTION_VAR_MAX   = 0.02
+MOTION_SEDENTARY  = 0.15
+MOTION_ACTIVE     = 0.50
+MOTION_SLEEP_MAX  = 0.15
+MOTION_VAR_MAX    = 0.02
 
 HR_SLEEP_MIN    = 40
 HR_SLEEP_MAX    = 90
 HR_STRESS_MAX   = 90
 HR_RESTING_MAX  = 85
-MIN_VALID_HR    = 30
-MAX_VALID_HR    = 220
+MIN_VALID_HR    = 40
+MAX_VALID_HR    = 180
 
-# Minimum fraction of a window that must have valid HR readings before
-# we trust the avg_hr value. Below this, hr_ok = False.
-HR_VALID_FRAC   = 0.25
+IR_FINGER_THRESH  = 50000   # must match Arduino exactly
 
-SMOOTH_WINDOW   = 8
+HR_VALID_FRAC     = 0.25
+FINGER_VALID_FRAC = 0.25
+
+SMOOTH_WINDOW = 8
 
 LEVEL_NAMES = {0: "Sedentary", 1: "Lightly Active", 2: "Active"}
 
-# Arduino sends this header on boot — must be explicitly skipped.
 CSV_HEADER = "timestamp_ms"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +70,7 @@ def open_serial(port: str) -> serial.Serial:
     try:
         ser = serial.Serial(port, BAUD_RATE, timeout=2)
         print(f"[serial] Connected to {port} @ {BAUD_RATE} baud")
-        time.sleep(2)          # wait for Arduino reset
+        time.sleep(2)
         ser.reset_input_buffer()
         return ser
     except serial.SerialException as e:
@@ -80,15 +79,6 @@ def open_serial(port: str) -> serial.Serial:
 
 
 def read_line(ser: serial.Serial) -> dict | None:
-    """
-    Parse one CSV line from the Arduino.
-    Returns a dict or None on any parse / validation failure.
-
-    FIX 2: explicitly detect and discard the CSV header line that the
-    updated Arduino firmware emits on startup. Previously this would
-    raise ValueError inside the try block and be silently swallowed,
-    which is fine but wasteful and confusing to debug.
-    """
     try:
         raw = ser.readline()
         if not raw:
@@ -96,10 +86,15 @@ def read_line(ser: serial.Serial) -> dict | None:
         line = raw.decode("utf-8", errors="replace").strip()
         if not line:
             return None
-        # Skip error lines, comments, and the CSV header
-        if line.startswith("ERR") or line.startswith("#"):
+        # Skip startup messages, errors, comments, header
+        if line.startswith("ERR"):
             return None
-        if line.startswith(CSV_HEADER):   # FIX 2: explicit header skip
+        if line.startswith("#"):
+            return None
+        if line.startswith(CSV_HEADER):
+            return None
+        # Skip any line that isn't pure CSV (startup messages, warnings)
+        if not line[0].isdigit():
             return None
         parts = line.split(",")
         if len(parts) != 6:
@@ -120,12 +115,10 @@ def read_line(ser: serial.Serial) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_motion(ax: float, ay: float, az: float) -> float:
-    """Deviation from 1 g — zero when perfectly still."""
     return abs(math.sqrt(ax**2 + ay**2 + az**2) - 1.0)
 
 
 class MovingAverage:
-    """O(1) running mean over a fixed window."""
     def __init__(self, window: int):
         self._buf   = collections.deque(maxlen=window)
         self._total = 0.0
@@ -141,15 +134,9 @@ class MovingAverage:
 # FEATURE EXTRACTION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def extract_features(motion_win: list[float], hr_win: list[int]) -> dict:
-    """
-    Compute per-window features from raw (unsmoothed) motion and HR buffers.
-
-    FIX 4 (design): hr_win now contains raw validated HR readings, not
-    moving-averaged ones. The valid-HR fraction check uses HR_VALID_FRAC
-    so a window with only a few finger-off samples doesn't report hr_ok=True
-    on stale averaged values.
-    """
+def extract_features(motion_win: list[float],
+                     hr_win:     list[int],
+                     ir_win:     list[int]) -> dict:
     n = len(motion_win)
     if n == 0:
         return {
@@ -157,7 +144,10 @@ def extract_features(motion_win: list[float], hr_win: list[int]) -> dict:
             "motion_variance": 0.0,
             "avg_hr":          0.0,
             "hr_ok":           False,
+            "finger_ok":       False,
             "valid_hr_frac":   0.0,
+            "finger_frac":     0.0,
+            "avg_ir":          0.0,
             "sedentary_pct":   0.0,
             "active_pct":      0.0,
             "light_pct":       0.0,
@@ -170,20 +160,30 @@ def extract_features(motion_win: list[float], hr_win: list[int]) -> dict:
     act_n = sum(1 for m in motion_win if m > MOTION_ACTIVE)
     lit_n = n - sed_n - act_n
 
-    # Only count HR values where the sensor reported a real beat
-    valid_hr    = [h for h in hr_win if MIN_VALID_HR <= h <= MAX_VALID_HR]
-    valid_frac  = len(valid_hr) / n
-    avg_hr      = sum(valid_hr) / len(valid_hr) if valid_hr else 0.0
+    # Finger presence from IR — ground truth
+    finger_samples = [ir for ir in ir_win if ir >= IR_FINGER_THRESH]
+    finger_frac    = len(finger_samples) / n
+    finger_ok      = finger_frac >= FINGER_VALID_FRAC
+    avg_ir         = sum(ir_win) / len(ir_win) if ir_win else 0.0
 
-    # hr_ok requires enough valid readings to be statistically meaningful
-    hr_ok = valid_frac >= HR_VALID_FRAC
+    # Only count HR when finger was confirmed present for that sample
+    valid_hr = [
+        h for h, ir in zip(hr_win, ir_win)
+        if ir >= IR_FINGER_THRESH and MIN_VALID_HR <= h <= MAX_VALID_HR
+    ]
+    valid_frac = len(valid_hr) / n
+    avg_hr     = sum(valid_hr) / len(valid_hr) if valid_hr else 0.0
+    hr_ok      = finger_ok and (valid_frac >= HR_VALID_FRAC)
 
     return {
         "avg_motion":      avg_m,
         "motion_variance": var_m,
         "avg_hr":          avg_hr,
         "hr_ok":           hr_ok,
+        "finger_ok":       finger_ok,
         "valid_hr_frac":   valid_frac,
+        "finger_frac":     finger_frac,
+        "avg_ir":          avg_ir,
         "sedentary_pct":   (sed_n / n) * 100,
         "active_pct":      (act_n / n) * 100,
         "light_pct":       (lit_n / n) * 100,
@@ -194,27 +194,22 @@ def extract_features(motion_win: list[float], hr_win: list[int]) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def detect_sleep(features: dict) -> str:
-    """
-    FIX 3: when hr_ok is False (finger off sensor / insufficient readings),
-    default to "awake" rather than "sleep". Previously, low motion with no
-    HR data would be classified as sleep — sitting still at a desk with no
-    finger on the sensor would start accumulating sleep time.
-    """
     motion_ok = (
-        features["avg_motion"]     < MOTION_SLEEP_MAX and
+        features["avg_motion"]      < MOTION_SLEEP_MAX and
         features["motion_variance"] < MOTION_VAR_MAX
     )
     if not motion_ok:
         return "awake"
 
-    # Motion looks sleep-like — now check HR if available
+    if not features["finger_ok"]:
+        return "awake"
+
     if features["hr_ok"]:
         hr = features["avg_hr"]
         if hr > HR_STRESS_MAX:
             return "awake"
         return "sleep" if HR_SLEEP_MIN <= hr <= HR_SLEEP_MAX else "awake"
 
-    # FIX 3: insufficient HR data → conservative default
     return "awake"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,7 +223,6 @@ def classify_lifestyle(features: dict) -> int:
         level = 2
     else:
         level = 1
-    # Elevated HR nudges sedentary → lightly active (e.g. sitting but stressed)
     if level == 0 and features["hr_ok"] and features["avg_hr"] > HR_RESTING_MAX:
         level = 1
     return level
@@ -238,16 +232,6 @@ def classify_lifestyle(features: dict) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SleepTracker:
-    """
-    State machine: AWAKE ↔ IN_SLEEP.
-
-    FIX 5 (off-by-one): sleep seconds are now only added when the label is
-    "sleep" AND we are confirming we remain in IN_SLEEP — i.e. AFTER the
-    wake-onset check. Previously the accumulation happened before the check,
-    so the boundary window (last sleep window before waking) was counted even
-    when it triggered the AWAKE transition.
-    """
-
     def __init__(self):
         self._state        = "AWAKE"
         self._consec_sleep = 0
@@ -268,11 +252,9 @@ class SleepTracker:
                 self._consec_awake = 0
 
         elif self._state == "IN_SLEEP":
-            # Check wake condition BEFORE accumulating — FIX 5
             if self._consec_awake >= WAKE_ONSET_WINDOWS:
                 self._state = "AWAKE"
             elif label == "sleep":
-                # Only accumulate when confirmed still asleep
                 self._sleep_secs += ANALYSIS_WINDOW_SEC
 
     @property
@@ -284,7 +266,6 @@ class SleepTracker:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class LifestyleTracker:
-    """Majority vote over the last N windows."""
     HISTORY = 5
 
     def __init__(self):
@@ -309,21 +290,24 @@ class LifestyleTracker:
 def print_output(sleep_hours: float, activity_level: int,
                  verbose: bool, features: dict | None = None,
                  sleep_state: str = ""):
-    print("\n" + "═" * 40)
+    print("\n" + "=" * 40)
     print(f"  SLEEP_HOURS: {sleep_hours}")
     print(f"  ACTIVITY_LEVEL: {activity_level}  ({LEVEL_NAMES[activity_level]})")
-    print("═" * 40)
+    print("=" * 40)
     if verbose and features:
         print(f"  [debug] sleep_state    : {sleep_state}")
         print(f"  [debug] avg_motion     : {features['avg_motion']:.4f} g")
         print(f"  [debug] motion_var     : {features['motion_variance']:.4f}")
+        print(f"  [debug] finger_ok      : {features['finger_ok']}"
+              f"  (frac={features['finger_frac']:.0%}"
+              f"  avg_ir={features['avg_ir']:.0f})")
         print(f"  [debug] avg_hr         : {features['avg_hr']:.0f} bpm"
               f"  (ok={features['hr_ok']}"
               f"  frac={features['valid_hr_frac']:.0%})")
         print(f"  [debug] sedentary %    : {features['sedentary_pct']:.1f}%")
         print(f"  [debug] light %        : {features['light_pct']:.1f}%")
         print(f"  [debug] active %       : {features['active_pct']:.1f}%")
-        print("═" * 40)
+        print("=" * 40)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
@@ -332,22 +316,23 @@ def print_output(sleep_hours: float, activity_level: int,
 def run(port: str, verbose: bool):
     ser = open_serial(port)
 
-    # Moving averages used only for display/smoothing — NOT fed into feature
-    # windows (FIX 4: feature windows store raw values so stats are correct).
     motion_smoother = MovingAverage(SMOOTH_WINDOW)
 
-    # Raw per-sample buffers for feature extraction
     motion_buf: collections.deque[float] = collections.deque(maxlen=SAMPLES_PER_WINDOW)
     hr_buf:     collections.deque[int]   = collections.deque(maxlen=SAMPLES_PER_WINDOW)
+    ir_buf:     collections.deque[int]   = collections.deque(maxlen=SAMPLES_PER_WINDOW)
 
     sleep_tracker     = SleepTracker()
     lifestyle_tracker = LifestyleTracker()
 
-    sample_count = 0
-    mode_label   = "DEMO" if DEMO_MODE else "NORMAL"
+    sample_count  = 0
+    mode_label    = "DEMO" if DEMO_MODE else "NORMAL"
+
     print(f"[monitor] Running in {mode_label} mode.")
     print(f"[monitor] Analysis every {ANALYSIS_WINDOW_SEC}s"
           f" — window = {SAMPLES_PER_WINDOW} samples.")
+    print(f"[monitor] IR finger threshold: {IR_FINGER_THRESH}")
+    print(f"[monitor] Waiting for first window ({ANALYSIS_WINDOW_SEC}s)...")
     print(f"[monitor] Press Ctrl+C to stop.\n")
 
     try:
@@ -356,24 +341,40 @@ def run(port: str, verbose: bool):
             if rec is None:
                 continue
 
-            # ── Motion ───────────────────────────────────────────────────────
+            # Motion
             motion_raw = compute_motion(rec["ax"], rec["ay"], rec["az"])
-            motion_smoother.update(motion_raw)   # for display only
-            motion_buf.append(motion_raw)         # raw → feature window
+            motion_smoother.update(motion_raw)
+            motion_buf.append(motion_raw)
 
-            # ── Heart rate ───────────────────────────────────────────────────
-            # FIX 1: only buffer non-zero HR values.
-            # Zero means "no beat detected this tick" — feeding it into the
-            # window would dilute avg_hr and make hr_ok falsely True at ~0 BPM.
-            # We still append to hr_buf (as 0) so the buffer length matches the
-            # motion buffer; extract_features() filters out invalid values.
-            hr_buf.append(rec["heart_rate"])
+            # IR
+            ir_buf.append(rec["ir"])
+
+            # HR — store 0 when no finger so it gets filtered in extract_features
+            if rec["ir"] >= IR_FINGER_THRESH:
+                hr_buf.append(rec["heart_rate"])
+            else:
+                hr_buf.append(0)
 
             sample_count += 1
 
-            # ── Analysis every full window ────────────────────────────────────
+            # Progress indicator so user knows it's running
+            if sample_count % SAMPLE_RATE_HZ == 0:
+                elapsed = sample_count // SAMPLE_RATE_HZ
+                remaining = ANALYSIS_WINDOW_SEC - (elapsed % ANALYSIS_WINDOW_SEC)
+                finger = "FINGER ON" if rec["ir"] >= IR_FINGER_THRESH else "no finger"
+                print(f"  [{elapsed:4d}s] IR={rec['ir']:6d} HR={rec['heart_rate']:3d} "
+                      f"motion={motion_raw:.3f}  [{finger}]  "
+                      f"next analysis in {remaining}s",
+                      end="\r")
+
+            # Analysis every full window
             if sample_count % SAMPLES_PER_WINDOW == 0:
-                features    = extract_features(list(motion_buf), list(hr_buf))
+                print()   # newline after progress line
+                features    = extract_features(
+                                  list(motion_buf),
+                                  list(hr_buf),
+                                  list(ir_buf),
+                              )
                 sleep_label = detect_sleep(features)
                 act_level   = classify_lifestyle(features)
 
@@ -389,7 +390,7 @@ def run(port: str, verbose: bool):
                 )
 
     except KeyboardInterrupt:
-        print("\n[monitor] Stopped.")
+        print("\n\n[monitor] Stopped.")
         print("\n── FINAL OUTPUT ──")
         print(f"SLEEP_HOURS: {sleep_tracker.sleep_hours}")
         print(f"ACTIVITY_LEVEL: {lifestyle_tracker.level}")
@@ -404,7 +405,7 @@ if __name__ == "__main__":
         description="Sleep + Lifestyle monitor — Arduino MPU6050 + MAX30102"
     )
     parser.add_argument("--port",    required=True,
-                        help="Serial port, e.g. COM3 or /dev/ttyUSB0")
+                        help="Serial port e.g. COM5 or /dev/ttyUSB0")
     parser.add_argument("--verbose", action="store_true",
                         help="Print detailed feature breakdown each cycle")
     args = parser.parse_args()

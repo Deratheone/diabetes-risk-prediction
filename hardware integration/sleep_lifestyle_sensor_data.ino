@@ -1,67 +1,50 @@
-/*
- * Combined Sensor Streamer — Arduino Nano
- * Hardware : Arduino Nano + MPU6050 + MAX30102
- * Output   : CSV @ 20 Hz  →  timestamp_ms,ax,ay,az,ir,heart_rate_bpm
- *
- * Bug fixes vs original:
- *   1. PPG FIFO is now drained on EVERY loop iteration (not just at output rate).
- *      checkForBeat() needs to see every sample at sensor rate — at 400 sps with
- *      a 50 ms output tick you were feeding it 1 in 20 samples. Fixed by using
- *      ppg.check() + ppg.getFIFOIR() + ppg.nextSample() inside the fast loop.
- *   2. Sensor downgraded to 100 sps (5 samples per 50 ms tick). Still plenty for
- *      BPM detection; prevents FIFO overflow and reduces Nano I2C load.
- *   3. First-beat skip: when lastBeatMs == 0, delta = millis()-0 = huge garbage.
- *      Now explicitly detected and used only to seed the timestamp.
- *   4. Outlier rejection added before buffering — a single motion artifact can no
- *      longer corrupt the running average.
- *   5. Removed conflicting setPulseAmplitudeRed/IR calls that overrode setup().
- *   6. lastIrValue cached globally so the output section always has a fresh reading
- *      even after the FIFO was drained mid-tick.
- */
-
 #include <Wire.h>
 #include <MPU6050.h>
 #include "MAX30105.h"
 #include "heartRate.h"
 
 #define SERIAL_BAUD         115200
-#define OUTPUT_INTERVAL_MS  50          // 20 Hz
+#define OUTPUT_INTERVAL_MS  50
 #define ACCEL_SCALE         16384.0f
-
-// Heart rate
-#define RATE_BUF_SIZE       6
+#define RATE_BUF_SIZE       8
 #define IR_FINGER_THRESH    50000L
-#define MIN_BEAT_MS         333L        // 333 ms → 180 BPM ceiling
-#define MAX_BEAT_MS         1500L       // 1500 ms → 40 BPM floor
-#define OUTLIER_RATIO       0.35f       // reject if > 35% from running avg
+#define MIN_BEAT_GAP_MS     333L
+#define MAX_BEAT_MS         1500L
+#define OUTLIER_TOLERANCE   0.35f
 
 MPU6050  mpu;
 MAX30105 ppg;
 
-// ── HR state (modified only in processPPGSample) ─────────────────────────────
-float  rateBuf[RATE_BUF_SIZE];
-byte   rateBufIdx  = 0;
-bool   rateBufFull = false;
-long   lastBeatMs  = 0;
-int    beatAvg     = 0;
-
-// Last IR value seen this tick (updated while draining FIFO)
-volatile long lastIrValue = 0;
+float rateBuf[RATE_BUF_SIZE];
+byte  rateBufIdx  = 0;
+bool  rateBufFull = false;
+long  lastBeatMs  = 0;
+int   beatAvg     = 0;
+long  lastIrValue = 0;
 
 unsigned long prevOutputMs = 0;
 
-// ── Process one PPG sample ───────────────────────────────────────────────────
-// Called at the sensor's sample rate (100 sps), not the output rate (20 Hz).
+float bufferAverage() {
+  byte count = rateBufFull ? RATE_BUF_SIZE : rateBufIdx;
+  if (count == 0) return 0;
+  float sum = 0;
+  for (byte i = 0; i < count; i++) sum += rateBuf[i];
+  return sum / count;
+}
+
+void resetHRState() {
+  for (byte i = 0; i < RATE_BUF_SIZE; i++) rateBuf[i] = 70.0f;
+  rateBufIdx  = 0;
+  rateBufFull = false;
+  lastBeatMs  = 0;
+  beatAvg     = 70;
+}
+
 void processPPGSample(long ir) {
   lastIrValue = ir;
 
   if (ir < IR_FINGER_THRESH) {
-    // Finger removed — reset everything cleanly
-    for (byte i = 0; i < RATE_BUF_SIZE; i++) rateBuf[i] = 0;
-    rateBufIdx  = 0;
-    rateBufFull = false;
-    lastBeatMs  = 0;
-    beatAvg     = 0;
+    resetHRState();
     return;
   }
 
@@ -70,93 +53,105 @@ void processPPGSample(long ir) {
   long now   = millis();
   long delta = now - lastBeatMs;
 
-  // BUG FIX 3: first beat only seeds the timestamp; skip BPM calculation.
-  // Without this, delta = millis() - 0 = huge value → rejected or garbage BPM.
   if (lastBeatMs == 0) {
     lastBeatMs = now;
     return;
   }
+
   lastBeatMs = now;
 
-  // Refractory window — reject physiologically impossible intervals
-  if (delta < MIN_BEAT_MS || delta > MAX_BEAT_MS) return;
+  if (delta < MIN_BEAT_GAP_MS || delta > MAX_BEAT_MS) return;
 
   float bpm = 60000.0f / (float)delta;
+  if (bpm < 40.0f || bpm > 180.0f) return;
 
-  // BUG FIX 4: outlier rejection — don't let motion artifacts corrupt the avg
-  if (beatAvg > 20) {
-    float deviation = fabsf(bpm - (float)beatAvg) / (float)beatAvg;
-    if (deviation > OUTLIER_RATIO) return;
+  float avg = bufferAverage();
+  if (avg > 10.0f) {
+    if (fabsf(bpm - avg) > avg * OUTLIER_TOLERANCE) return;
   }
 
-  // Circular buffer
   rateBuf[rateBufIdx] = bpm;
   rateBufIdx = (rateBufIdx + 1) % RATE_BUF_SIZE;
   if (rateBufIdx == 0) rateBufFull = true;
 
-  // Running average
-  byte  count = rateBufFull ? RATE_BUF_SIZE : rateBufIdx;
-  float sum   = 0;
-  for (byte i = 0; i < count; i++) sum += rateBuf[i];
-  beatAvg = (count > 0) ? (int)(sum / count) : 0;
+  beatAvg = (int)bufferAverage();
 }
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
+  delay(1000);
+
+  Wire.end();
+  delay(50);
   Wire.begin();
+  Wire.setClock(100000UL);
+  delay(250);
 
   // ── MPU6050 ──────────────────────────────────────────────────────────────
+  Serial.println(F("Init MPU6050..."));
   mpu.initialize();
-  if (!mpu.testConnection()) {
-    while (true) { Serial.println("ERR:MPU6050_NOT_FOUND"); delay(2000); }
+  delay(200);
+
+  // Read WHO_AM_I directly — clone chips return 0x70/0x72/0x98
+  // instead of 0x68, making testConnection() fail even though
+  // the sensor works perfectly. We bypass testConnection() entirely
+  // and just verify the register is readable.
+  Wire.beginTransmission(0x68);
+  Wire.write(0x75);
+  Wire.endTransmission(false);
+  Wire.requestFrom(0x68, 1);
+  byte whoAmI = Wire.read();
+
+  Serial.print(F("MPU6050 WHO_AM_I: 0x"));
+  Serial.print(whoAmI, HEX);
+
+  // Accept 0x68 (genuine) and common clones 0x70, 0x72, 0x98
+  if (whoAmI == 0x68 || whoAmI == 0x70 ||
+      whoAmI == 0x72 || whoAmI == 0x98) {
+    Serial.println(F(" — OK (chip detected)"));
+  } else {
+    // Completely unrecognised — halt
+    while (true) {
+      Serial.println(F("ERR: MPU6050 not found — check SDA/SCL/VCC/GND"));
+      delay(2000);
+    }
   }
-  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);   // ±2 g → 16384 LSB/g
-  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);   // ±250 °/s
-  mpu.setDLPFMode(MPU6050_DLPF_BW_20);              // 20 Hz low-pass
+
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+  mpu.setDLPFMode(MPU6050_DLPF_BW_20);
+  Serial.println(F("MPU6050 OK"));
 
   // ── MAX30102 ─────────────────────────────────────────────────────────────
-  if (!ppg.begin(Wire, I2C_SPEED_FAST)) {
-    while (true) { Serial.println("ERR:MAX30102_NOT_FOUND"); delay(2000); }
+  Serial.println(F("Init MAX30102..."));
+  if (!ppg.begin(Wire, I2C_SPEED_STANDARD)) {
+    while (true) {
+      Serial.println(F("ERR: MAX30102 not found — check SDA/SCL and 3.3V"));
+      delay(2000);
+    }
   }
-  /*
-   * setup(brightness, sampleAvg, ledMode, sampleRate, pulseWidth, adcRange)
-   *   brightness  60   → ~12 mA, good for fingertip
-   *   sampleAvg    4   → 4 raw ADC readings averaged per FIFO entry
-   *   ledMode      2   → Red + IR (checkForBeat uses IR channel)
-   *   sampleRate 100   → 100 sps effective after averaging
-   *                       = 5 samples per 50 ms output tick — FIFO safe
-   *   pulseWidth 411   → 18-bit resolution (best SNR, per datasheet table 7)
-   *   adcRange  4096   → 15.63 pA LSB (mid-range, matches typical finger signal)
-   *
-   * BUG FIX 5: removed setPulseAmplitudeRed/IR calls that overrode setup().
-   * BUG FIX 2: reduced from 400 sps → 100 sps (sufficient for HR; prevents
-   *             FIFO overflow between loop iterations on the Nano).
-   */
-  ppg.setup(60, 4, 2, 100, 411, 4096);
 
-  // CSV header — helps downstream parsers (Python/MATLAB/Excel)
-  Serial.println("timestamp_ms,ax,ay,az,ir,heart_rate_bpm");
+  byte partID = ppg.readPartID();
+  Serial.print(F("MAX30102 chip ID: 0x"));
+  Serial.print(partID, HEX);
+  if (partID == 0x15) {
+    Serial.println(F("  (OK)"));
+  } else {
+    Serial.println(F("  (WARNING: unexpected ID)"));
+  }
+
+  ppg.setup(60, 4, 2, 100, 411, 4096);
+  resetHRState();
+
+  Serial.println(F("MAX30102 OK - LEDs are now active"));
+  Serial.println(F("Place fingertip gently on sensor. Do not press hard."));
+  Serial.println();
+  Serial.println(F("timestamp_ms,ax,ay,az,ir,heart_rate_bpm"));
 }
 
 void loop() {
-  /*
-   * BUG FIX 1 — drain the PPG FIFO on EVERY loop iteration.
-   *
-   * ppg.check()      pulls all queued hardware samples into the library buffer.
-   * ppg.available()  returns how many unread samples are waiting.
-   * ppg.getFIFOIR()  reads the IR value of the current sample.
-   * ppg.nextSample() advances the read pointer (must call after each read).
-   *
-   * This decouples sensor sampling (100 Hz) from CSV output (20 Hz).
-   * checkForBeat() now sees every sample in the correct sequence → stable BPM.
-   */
-  ppg.check();
-  while (ppg.available()) {
-    processPPGSample(ppg.getFIFOIR());
-    ppg.nextSample();
-  }
+  processPPGSample(ppg.getIR());
 
-  // ── Output at 20 Hz ──────────────────────────────────────────────────────
   unsigned long now = millis();
   if (now - prevOutputMs < OUTPUT_INTERVAL_MS) return;
   prevOutputMs = now;
@@ -168,7 +163,6 @@ void loop() {
   float ay = rawAy / ACCEL_SCALE;
   float az = rawAz / ACCEL_SCALE;
 
-  // lastIrValue was updated by the FIFO drain above — always fresh
   Serial.print(now);           Serial.print(',');
   Serial.print(ax, 4);         Serial.print(',');
   Serial.print(ay, 4);         Serial.print(',');
