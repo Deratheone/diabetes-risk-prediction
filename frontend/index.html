@@ -304,7 +304,7 @@ let state={
   step:1,predicted:false,risk:null,errors:{},animDir:"fwd",
   gender:"",
   age:"",weight:"",height:"",waist:"",
-  pregnancies:"",bp:"",
+  pregnancies:"",bp:"",glucose:"",
   relatives:[],othersClose:null,
   sugar:"",medicines:[]
 };
@@ -336,6 +336,12 @@ function bmiCat(b){
   return{l:"Obese",c:"#f87171"};
 }
 function isFemale(){return state.gender==="female";}
+function glucoseCat(g){
+  if(!g)return null;
+  if(g<100)return{l:"Normal",c:"#4ade80"};
+  if(g<126)return{l:"Pre-diabetic",c:"#facc15"};
+  return{l:"Diabetic range",c:"#f87171"};
+}
 function calcRisk(){
   const b=bmi(),p=pedigree();
   let s=0;
@@ -346,6 +352,8 @@ function calcRisk(){
   if(parseFloat(state.bp)>90)s+=2;
   if(p>1)s+=3; else if(p>.5)s+=2; else if(p>0)s+=1;
   s+=state.medicines.length;
+  const g=parseFloat(state.glucose);
+  if(g>=126)s+=3; else if(g>=100)s+=2;
   if(s<=2)return{level:"Low",color:"#4ade80",pct:18};
   if(s<=5)return{level:"Moderate",color:"#facc15",pct:45};
   if(s<=8)return{level:"High",color:"#fb923c",pct:72};
@@ -442,12 +450,36 @@ function renderStep1(){
 
 function renderStep2(){
   const female=isFemale();
+  const g=parseFloat(state.glucose),gc=glucoseCat(g);
+  const gpct=g?Math.min(Math.max(((g-60)/200)*100,0),100):0;
   return sth("🧪","Clinical Inputs","Recent medical measurements")+
-  `<div class="fgrid${female?" c2":""}">
+  `<div class="fgrid c2">
     ${female?field("preg","Number of Pregnancies","count","e.g. 2",state.pregnancies,"Enter 0 if no pregnancies",""):""}
     ${field("bp","Diastolic Blood Pressure","mm Hg","e.g. 72",state.bp,"",state.errors.bp)}
-  </div>
-  <div class="ibox"><span>ℹ️</span><p>Use values from your most recent lab report or medical checkup for the most accurate prediction.</p></div>`;
+    ${field("glucose","Fasting Blood Glucose","mg/dL","e.g. 95",state.glucose,"Fasting glucose from your latest blood test",state.errors.glucose)}
+  </div>`+
+  (gc?`<div class="cpanel" id="glucosePanel">
+    <div class="cp-title"><span>🩸</span> Glucose Status</div>
+    <div class="cpgrid">
+      <div class="ccard">
+        <div class="ccard-top">
+          <span class="clbl">Fasting Blood Glucose</span>
+          <span class="cbadge" style="color:${gc.c};background:${gc.c}18;border:1px solid ${gc.c}33">${gc.l}</span>
+        </div>
+        <div class="cval" style="color:${gc.c}">${g}</div>
+        <div class="ctrack">
+          <div class="cfill" style="width:${gpct}%;background:${gc.c}"></div>
+          <div class="cthumb" style="left:${gpct}%;background:${gc.c}"></div>
+        </div>
+        <div class="cscale"><span>60</span><span>100</span><span>126</span><span>200+</span></div>
+        <div class="cunit-row" style="margin-top:8px">
+          <span class="cunit" style="color:${gc.c}">mg/dL</span>
+          <span class="chint">${g<100?"Within normal fasting range":g<126?"Impaired fasting glucose — monitor closely":"Above diabetic threshold"}</span>
+        </div>
+      </div>
+    </div>
+  </div>`:"") +
+  `<div class="ibox"><span>ℹ️</span><p>Use values from your most recent lab report or medical checkup for the most accurate prediction.</p></div>`;
 }
 
 function renderStep3(){
@@ -538,6 +570,7 @@ function renderSummary(){
       <div class="sstitle">🧪 Clinical</div>
       ${isFemale()?row("Pregnancies",state.pregnancies||"0"):""}
       ${row("Blood Pressure",`${state.bp} mm Hg`)}
+      ${state.glucose?row("Fasting Glucose",`<span style="color:${glucoseCat(parseFloat(state.glucose))?.c}">${state.glucose} mg/dL (${glucoseCat(parseFloat(state.glucose))?.l})</span>`):""}
     </div>
     <div class="ssec">
       <div class="sstitle">👨‍👩‍👧 Family History</div>
@@ -568,6 +601,9 @@ function renderResult(){
   if(p>1)factors.push({t:"Strong family history",c:"#f87171"});
   else if(p>0)factors.push({t:"Family history present",c:"#facc15"});
   if(sm.length>0)factors.push({t:`${sm.length} risk-affecting medication(s)`,c:"#facc15"});
+  const g=parseFloat(state.glucose);
+  if(g>=126)factors.push({t:`Glucose ${g} mg/dL — diabetic range`,c:"#f87171"});
+  else if(g>=100)factors.push({t:`Glucose ${g} mg/dL — pre-diabetic`,c:"#facc15"});
   if(factors.length===0)factors.push({t:"No major risk factors identified",c:"#4ade80"});
   return sth("🔬","Risk Assessment Result","Based on your complete health profile")+
   `<div class="rmain">
@@ -700,14 +736,50 @@ function attach(){
   }
 
   // Input sync
-  const ids=["age","weight","height","waist","preg","bp"];
-  const keys=["age","weight","height","waist","pregnancies","bp"];
+  const ids=["age","weight","height","waist","preg","bp","glucose"];
+  const keys=["age","weight","height","waist","pregnancies","bp","glucose"];
   ids.forEach((id,i)=>{
     const el=document.getElementById(id);
     if(el)el.addEventListener("input",e=>{
       state[keys[i]]=e.target.value;
       state.errors[keys[i]]=undefined;
       if(["weight","height","waist"].includes(keys[i]))updateCalcPanel();
+      else if(keys[i]==="glucose"){
+        // Update glucose panel in-place without full re-render
+        const g=parseFloat(e.target.value),gc=glucoseCat(g);
+        const gpct=g?Math.min(Math.max(((g-60)/200)*100,0),100):0;
+        let panel=document.getElementById("glucosePanel");
+        const innerHTML=gc?`
+          <div class="cp-title"><span>🩸</span> Glucose Status</div>
+          <div class="cpgrid">
+            <div class="ccard">
+              <div class="ccard-top">
+                <span class="clbl">Fasting Blood Glucose</span>
+                <span class="cbadge" style="color:${gc.c};background:${gc.c}18;border:1px solid ${gc.c}33">${gc.l}</span>
+              </div>
+              <div class="cval" style="color:${gc.c}">${g}</div>
+              <div class="ctrack">
+                <div class="cfill" style="width:${gpct}%;background:${gc.c}"></div>
+                <div class="cthumb" style="left:${gpct}%;background:${gc.c}"></div>
+              </div>
+              <div class="cscale"><span>60</span><span>100</span><span>126</span><span>200+</span></div>
+              <div class="cunit-row" style="margin-top:8px">
+                <span class="cunit" style="color:${gc.c}">mg/dL</span>
+                <span class="chint">${g<100?"Within normal fasting range":g<126?"Impaired fasting glucose — monitor closely":"Above diabetic threshold"}</span>
+              </div>
+            </div>
+          </div>`:"";
+        if(panel){
+          if(innerHTML)panel.innerHTML=innerHTML;
+          else panel.remove();
+        } else if(innerHTML){
+          const ibox=document.querySelector(".ibox");
+          const el2=document.createElement("div");
+          el2.className="cpanel";el2.id="glucosePanel";
+          el2.innerHTML=innerHTML;
+          ibox.parentNode.insertBefore(el2,ibox);
+        }
+      }
       else renderProg();
     });
   });
@@ -752,7 +824,7 @@ function attach(){
   // Reset
   const rb=document.getElementById("resetBtn");
   if(rb)rb.addEventListener("click",()=>{
-    Object.assign(state,{step:1,predicted:false,risk:null,errors:{},animDir:"fwd",gender:"",age:"",weight:"",height:"",waist:"",pregnancies:"",bp:"",relatives:[],othersClose:null,sugar:"",medicines:[]});
+    Object.assign(state,{step:1,predicted:false,risk:null,errors:{},animDir:"fwd",gender:"",age:"",weight:"",height:"",waist:"",pregnancies:"",bp:"",glucose:"",relatives:[],othersClose:null,sugar:"",medicines:[]});
     renderProg();render("bck");
   });
 }
