@@ -21,7 +21,7 @@ os.makedirs("outputs", exist_ok=True)
 import numpy  as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("TkAgg")  # Use interactive backend for display
 import matplotlib.pyplot   as plt
 import matplotlib.gridspec as gridspec
 from   matplotlib.colors   import LinearSegmentedColormap
