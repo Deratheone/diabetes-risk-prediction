@@ -1303,6 +1303,39 @@ class DiabetesPredictor:
 
         return report
 
+    def load_model(self, model_path: str):
+        """
+        Load a pre-trained model from file.
+
+        Args:
+            model_path: Path to the saved model file (.joblib)
+        """
+        print(f"\n  Loading model from: {model_path}")
+
+        model_data = joblib.load(model_path)
+
+        # Restore model components
+        self.trainer.best_model = model_data["model"]
+        self.trainer.best_model_name = model_data["model_name"]
+        self.processor.scaler = model_data["scaler"]
+        self.processor.feature_names = model_data["feature_names"]
+        self.trainer.results = {model_data["model_name"]: model_data["results"]}
+
+        # Initialize explainer with loaded model
+        if SHAP_AVAILABLE:
+            self.explainer = Explainer(self.trainer.best_model, self.processor.feature_names)
+            try:
+                self.explainer.explainer = shap.TreeExplainer(self.trainer.best_model)
+            except Exception:
+                pass  # SHAP optional
+
+        # Initialize report generator
+        self.report_generator = ReportGenerator(self.risk_assessor, self.explainer)
+
+        self.is_trained = True
+        print(f"  Model loaded: {model_data['model_name']}")
+        print(f"  Features: {len(self.processor.feature_names)}")
+
     def _explain_roc_auc(self):
         """Print ROC-AUC explanation."""
         print("\n" + "=" * 70)
