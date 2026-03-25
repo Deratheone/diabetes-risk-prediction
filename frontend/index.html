@@ -377,7 +377,7 @@ let state={
   sugar:"",medicines:[],
   hardware_glucose:null,hardware_glucose_confidence:"unknown",
   hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
-  hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
+  hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",hardware_heart_rate:null,
   show_hardware_modal:false,hardware_reading_glucose:false,
   hardware_reading_sleep:false,hardware_current_view:null,
   hardware_error:null,
@@ -560,7 +560,7 @@ function renderGlucoseReader(){
     return`<div class="hardware-reader anim-in">
       <div class="reader-loading">
         <div class="spinner"></div>
-        <div class="reader-status">Detecting glucose analyzer on COM5...</div>
+        <div class="reader-status">Detecting glucose analyzer on COM9...</div>
         <div style="font-size:12px;color:var(--mu);margin-top:8px">Reading RGB sensor data from Arduino...</div>
       </div>
     </div>`;
@@ -608,7 +608,7 @@ function renderGlucoseReader(){
   return`<div class="hardware-reader anim-in">
     <div class="reader-loading">
       <div class="spinner" style="margin-bottom:12px"></div>
-      <div class="reader-status">Ready to detect glucose analyzer on COM5...</div>
+      <div class="reader-status">Ready to detect glucose analyzer on COM9...</div>
       <div style="font-size:12px;color:var(--mu);margin-top:8px">Ensure the Arduino glucose analyzer is connected and the strip is in place</div>
       <button class="modal-btn modal-btn-primary" id="startGlucoseBtn" style="margin-top:16px;max-width:200px">Start Detection</button>
       <button class="modal-btn modal-btn-secondary" id="backGlucoseInitBtn" style="margin-top:8px;max-width:200px">← Back</button>
@@ -650,6 +650,10 @@ function renderSleepReader(){
           <div class="reader-value-label">Activity Level</div>
           <div class="reader-value-data">${state.hardware_activity_label||state.hardware_activity_level||"Moderate"}</div>
         </div>
+        ${state.hardware_heart_rate?`<div class="reader-value">
+          <div class="reader-value-label">Heart Rate</div>
+          <div class="reader-value-data">${state.hardware_heart_rate} BPM</div>
+        </div>`:''}
         <div class="hw-info">
           <span>ℹ️</span>
           <span>Demo data - requires prolonged monitoring for accuracy. This is for demonstration purposes only.</span>
@@ -862,6 +866,8 @@ function renderSummary(){
       <div class="sstitle">⚙️ Hardware Integration</div>
       ${state.hardware_glucose!==null?row("Glucose Source",`<span class="chi">Hardware Analyzer (${state.hardware_glucose} mg/dL)</span>`):""}
       ${state.hardware_sleep_hours!==null?row("Sleep Hours",`<span class="chi">${state.hardware_sleep_hours} hrs</span>`):""}
+      ${state.hardware_activity_label?row("Activity Level",`<span class="chi">${state.hardware_activity_label}</span>`):""}
+      ${state.hardware_heart_rate?row("Heart Rate",`<span class="chi">${state.hardware_heart_rate} BPM</span>`):""}
     </div>`:""}
   </div>
   <button class="bpredict" id="predictBtn"><span>🔬</span> Generate Risk Prediction</button>`;
@@ -1241,7 +1247,7 @@ function attach(){
         state.hardware_glucose=data.glucose_value||0;
         state.hardware_glucose_confidence=data.confidence||"unknown";
         state.hardware_glucose_level=data.glucose_level||"";
-        state.hardware_glucose_rgb=data.is_no_strip?"":`R:${data.serial_output?data.serial_output.find(l=>l.includes("Avg Normalised"))?.split(":")[1]||"N/A":"N/A"}`;
+        state.hardware_glucose_rgb=data.is_no_strip?"":(data.rgb_normalized||"N/A");
         state.hardware_glucose_distance=data.match_distance?`${data.match_distance.toFixed(2)} ${data.match_distance>20?"(Low match)":"(Good match)"}`.trim():"";
         render();
 
@@ -1285,8 +1291,9 @@ function attach(){
         state.hardware_sleep_hours=data.sleep_hours||0;
         state.hardware_activity_level=data.activity_level||0;
         state.hardware_activity_label=data.activity_label||"Unknown";
+        state.hardware_heart_rate=data.heart_rate||(data.features&&data.features.avg_hr?Math.round(data.features.avg_hr):null);
         render();
-        
+
         if (data.avg_sleep) {
             setTimeout(() => {
                 showToast("Fetching History", "Retrieving historical data from sensor_data.csv...", "info");
@@ -1586,7 +1593,7 @@ function attach(){
       relatives:[],othersClose:null,sugar:"",medicines:[],
       hardware_glucose:null,hardware_glucose_confidence:"unknown",
       hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
-      hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
+      hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",hardware_heart_rate:null,
       show_hardware_modal:false,hardware_reading_glucose:false,hardware_reading_sleep:false,
       hardware_current_view:null,hardware_error:null,
       // Reset risk reduction state

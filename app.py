@@ -150,15 +150,17 @@ def get_averages_from_csv():
         with open(CSV_FILE_PATH, 'r', newline='') as csvfile:
             reader = csv.DictReader(csvfile)
             rows = list(reader)
-            
             if not rows:
                 return None
-                
+
+            # Only use the first 7 rows after the header for averaging
+            first_7_rows = rows[:7]
+
             glucose_vals = []
             sleep_vals = []
             lifestyles = []
 
-            for row in rows:
+            for row in first_7_rows:
                 # Glucose
                 if row.get('glucose'):
                     try:
@@ -167,7 +169,6 @@ def get_averages_from_csv():
                             glucose_vals.append(val)
                     except ValueError:
                         pass
-                
                 # Sleep
                 if row.get('sleep'):
                     try:
@@ -176,23 +177,22 @@ def get_averages_from_csv():
                             sleep_vals.append(val)
                     except ValueError:
                         pass
-                
                 # Lifestyle
                 if row.get('lifestyle') and row['lifestyle'].strip():
                     lifestyles.append(row['lifestyle'])
-            
+
             avg_glucose = round(sum(glucose_vals) / len(glucose_vals)) if glucose_vals else None
             avg_sleep = round(sum(sleep_vals) / len(sleep_vals), 1) if sleep_vals else None
-            
+
             # Most frequent lifestyle
             from collections import Counter
             most_common_lifestyle = Counter(lifestyles).most_common(1)[0][0] if lifestyles else None
-            
+
             return {
                 'avg_glucose': avg_glucose,
                 'avg_sleep': avg_sleep,
                 'common_lifestyle': most_common_lifestyle,
-                'data_points': len(rows)
+                'data_points': len(first_7_rows)
             }
     except Exception as e:
         print(f"Error calculating averages: {e}")
@@ -577,7 +577,13 @@ def predict():
 def read_hardware_glucose():
     """
     Read glucose level from Arduino glucose analyzer.
-    
+    Simplified protocol (COM9 @ 9600 baud) - similar to sleep endpoint approach.
+
+    Protocol:
+    1. Connect to Arduino
+    2. Read initial output, auto-send ENTER to trigger reading
+    3. Parse result for glucose level, match distance, RGB values
+
     Returns:
     {
         "success": bool,
@@ -588,32 +594,52 @@ def read_hardware_glucose():
         "match_distance": float,
         "confidence": str,
         "is_no_strip": bool,
+        "rgb_normalized": str,
         "serial_output": [...],
         "error": str (if any)
     }
     """
     import serial
     import time
-    PORT = "COM9"
+
+    PORT = "COM9"  # Glucose analyzer port
     BAUD_RATE = 9600
+    READ_TIMEOUT = 15  # Total time to read data
+
+    # Glucose reference mapping
+    GLUCOSE_LEVELS = [
+        {"label": "!! NO STRIP DETECTED !!", "value": None, "is_no_strip": True},
+        {"label": "Normal — No glucose detected", "value": 0, "is_no_strip": False},
+        {"label": "Low glucose (~100 mg/dL)", "value": 100, "is_no_strip": False},
+        {"label": "Medium glucose (~250 mg/dL)", "value": 250, "is_no_strip": False},
+        {"label": "High glucose (~500+ mg/dL)", "value": 500, "is_no_strip": False},
+    ]
+
     try:
+        # Step 1: Connect to Arduino
         ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
-        time.sleep(2)
+        time.sleep(2)  # Wait for Arduino reset
         ser.reset_input_buffer()
     except serial.SerialException as e:
         # Fallback to CSV simulation
-        print(f"Hardware not found ({e}), using CSV data...")
+        print(f"Hardware not found on {PORT} ({e}), using CSV data...")
         csv_data = get_sensor_data_from_csv()
-        
+
         if csv_data and csv_data.get('glucose'):
             try:
                 g_val = int(float(csv_data['glucose']))
-                
-                # Save simulated value to CSV
                 save_sensor_data_to_csv(glucose=g_val)
-                
-                # Calculate averages for response
                 averages = get_averages_from_csv() or {}
+
+                # Estimate RGB based on glucose value
+                if g_val == 0:
+                    rgb_sim = "R=104  G=87  B=56"
+                elif g_val <= 100:
+                    rgb_sim = "R=108  G=86  B=55"
+                elif g_val <= 250:
+                    rgb_sim = "R=114  G=82  B=50"
+                else:
+                    rgb_sim = "R=117  G=80  B=50"
 
                 return jsonify({
                     'success': True,
@@ -625,12 +651,13 @@ def read_hardware_glucose():
                     'match_distance': 0,
                     'confidence': 'High (Simulated)',
                     'is_no_strip': False,
+                    'rgb_normalized': rgb_sim,
                     'serial_output': [],
                     'error': None
                 })
             except ValueError:
                 pass
-                
+
         return jsonify({
             'success': False,
             'message': f'Cannot connect to {PORT} and no CSV data: {str(e)}',
@@ -645,53 +672,128 @@ def read_hardware_glucose():
             'error': str(e)
         }), 503
 
+    # Step 2: Read data and auto-send ENTER
     output_lines = []
-    start_time = time.time()
-    # Read all serial output for 12 seconds (enough for countdown + result)
-    glucose_value = None
-    
+    glucose_level = None
+    match_distance = None
+    is_no_strip = False
+    rgb_normalized = None
+    sent_enter = False
+
     try:
-        while time.time() - start_time < 12:
+        start_time = time.time()
+
+        while time.time() - start_time < READ_TIMEOUT:
+            # Read any available data
             if ser.in_waiting:
                 raw = ser.readline()
                 if raw:
                     line = raw.decode("utf-8", errors="replace").strip()
-                    output_lines.append(line)
-                    # Try to parse glucose value
+                    if line:
+                        output_lines.append(line)
+                        print(f"[Glucose] {line}")  # Debug output
+
+                        # Auto-send ENTER when we see the prompt
+                        if not sent_enter and ("press ENTER" in line.lower() or "then press" in line.lower()):
+                            time.sleep(0.3)
+                            ser.write(b'\r\n')
+                            sent_enter = True
+                            print("[Glucose] Sent ENTER")
+
+                        # Parse RGB normalized values
+                        if "Avg Normalised" in line and ":" in line:
+                            rgb_normalized = line.split(":", 1)[-1].strip()
+
+                        # Parse glucose level from result
+                        if "Glucose Level" in line and ":" in line:
+                            glucose_level = line.split(":", 1)[-1].strip()
+
+                        # Parse match distance
+                        if "Match distance" in line and ":" in line:
+                            try:
+                                match_distance = float(line.split(":", 1)[-1].strip())
+                            except:
+                                pass
+
+                        # Check for no strip
+                        if "!! NO STRIP DETECTED !!" in line:
+                            is_no_strip = True
+
+                        # End marker - we're done
+                        if "Reset the Arduino" in line:
+                            break
             else:
+                # If no data and we haven't sent ENTER yet, send it after 3 seconds
+                if not sent_enter and (time.time() - start_time) > 3:
+                    ser.write(b'\r\n')
+                    sent_enter = True
+                    print("[Glucose] Auto-sent ENTER (no prompt detected)")
                 time.sleep(0.05)
+
         ser.close()
-        
-        # Mock extraction logic
-        if output_lines:
-            import re
-            for line in reversed(output_lines):
-                # Look for number in line
-                match = re.search(r'(\d+)', line)
-                if match:
-                    glucose_value = int(match.group(1))
+
+        # Determine confidence
+        confidence = "unknown"
+        if is_no_strip:
+            confidence = "low"
+        elif match_distance is not None:
+            if match_distance > 20:
+                confidence = "low"
+            elif match_distance > 15:
+                confidence = "medium"
+            else:
+                confidence = "high"
+
+        # Map glucose level to numeric value
+        glucose_value = None
+        if glucose_level and not is_no_strip:
+            for level in GLUCOSE_LEVELS:
+                if level["label"] in glucose_level or glucose_level in level["label"]:
+                    glucose_value = level.get("value")
                     break
-        
-        if glucose_value:
+            # If no exact match, try partial matching
+            if glucose_value is None:
+                if "100" in glucose_level or "Low" in glucose_level:
+                    glucose_value = 100
+                elif "250" in glucose_level or "Medium" in glucose_level:
+                    glucose_value = 250
+                elif "500" in glucose_level or "High" in glucose_level:
+                    glucose_value = 500
+                elif "Normal" in glucose_level or "No glucose" in glucose_level:
+                    glucose_value = 0
+
+        if glucose_value is not None:
             save_sensor_data_to_csv(glucose=glucose_value)
-            
-        # Get updated averages
+
         averages = get_averages_from_csv() or {}
-            
+
         return jsonify({
             'success': True,
-            'message': 'Raw output from glucose analyzer',
+            'message': 'Successfully read from glucose analyzer',
             'device_connected': True,
-            'serial_output': output_lines[-30:],
+            'glucose_level': glucose_level or "Unknown",
             'glucose_value': glucose_value,
-            'avg_glucose': averages.get('avg_glucose')
+            'avg_glucose': averages.get('avg_glucose'),
+            'match_distance': match_distance,
+            'confidence': confidence,
+            'is_no_strip': is_no_strip,
+            'rgb_normalized': rgb_normalized,
+            'serial_output': output_lines[-20:],
+            'error': None
         })
+
     except Exception as e:
-        ser.close()
+        try:
+            ser.close()
+        except:
+            pass
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
-            'message': f'Failed to read serial output: {str(e)}',
+            'message': f'Failed to read from analyzer: {str(e)}',
             'device_connected': True,
+            'serial_output': output_lines[-10:] if output_lines else [],
             'error': str(e)
         }), 500
 
@@ -905,8 +1007,14 @@ def get_fallback_suggestions(risk_category, risk_factors):
 def read_hardware_sleep():
     """
     Read sleep hours and activity level from Arduino sleep tracker.
-    Uses the existing sleep_lifestyle.py script.
-    
+    Implements the same protocol as sleep_lifestyle.py directly (COM5 @ 115200 baud).
+
+    Protocol:
+    1. Read CSV format serial data: timestamp_ms,ax,ay,az,ir,heart_rate
+    2. Collect a window of samples (15 seconds worth @ 20Hz = 300 samples)
+    3. Calculate motion, heart rate features with proper smoothing
+    4. Use sleep and lifestyle tracker classes for accurate classification
+
     Returns:
     {
         "success": bool,
@@ -915,68 +1023,71 @@ def read_hardware_sleep():
         "sleep_hours": float,
         "activity_level": int,
         "activity_label": str,
-        "serial_output": [...],
+        "features": dict,
+        "avg_sleep": float,
+        "common_lifestyle": str,
         "error": str (if any)
     }
     """
     import serial
     import time
     import math
-    PORT = "COM5"
+    import collections
+
+    # Configuration from sleep_lifestyle.py
+    PORT = "COM5"  # Sleep/activity sensor port
     BAUD_RATE = 115200
     SAMPLE_RATE_HZ = 20
-    ANALYSIS_WINDOW_SEC = 15
+    DEMO_MODE = True  # Use shorter analysis window for API responses
+
+    if DEMO_MODE:
+        ANALYSIS_WINDOW_SEC = 15
+        SLEEP_ONSET_WINDOWS = 2
+        WAKE_ONSET_WINDOWS = 1
+    else:
+        ANALYSIS_WINDOW_SEC = 60
+        SLEEP_ONSET_WINDOWS = 15
+        WAKE_ONSET_WINDOWS = 5
+
     SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * ANALYSIS_WINDOW_SEC
-    IR_FINGER_THRESH = 50000
-    MIN_VALID_HR = 40
-    MAX_VALID_HR = 180
-    HR_VALID_FRAC = 0.25
-    FINGER_VALID_FRAC = 0.25
+
+    # Thresholds from sleep_lifestyle.py
     MOTION_SEDENTARY = 0.15
     MOTION_ACTIVE = 0.50
+    MOTION_SLEEP_MAX = 0.15
+    MOTION_VAR_MAX = 0.02
+    HR_SLEEP_MIN = 40
+    HR_SLEEP_MAX = 90
+    HR_STRESS_MAX = 90
+    HR_RESTING_MAX = 85
+    MIN_VALID_HR = 40
+    MAX_VALID_HR = 180
+    IR_FINGER_THRESH = 50000
+    HR_VALID_FRAC = 0.25
+    FINGER_VALID_FRAC = 0.25
+    SMOOTH_WINDOW = 8
+
     LEVEL_NAMES = {0: "Sedentary", 1: "Lightly Active", 2: "Active"}
-    try:
-        ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
-        time.sleep(2)
-        ser.reset_input_buffer()
-    except serial.SerialException as e:
-        # Fallback to CSV
-        csv_data = get_sensor_data_from_csv()
-        
-        if csv_data:
-             try:
-                 sleep_h = float(csv_data.get('sleep', 7.0))
-             except ValueError:
-                 sleep_h = 7.0
-                 
-             lifestyle = csv_data.get('lifestyle', 'Moderate')
-             
-             # Save simulated value to CSV
-             save_sensor_data_to_csv(sleep=sleep_h, lifestyle=lifestyle)
-             
-             # Get updated averages
-             averages = get_averages_from_csv() or {}
+    CSV_HEADER = "timestamp_ms"
 
-             level_map = {"Sedentary": 0, "Lightly Active": 1, "Moderate": 1, "Active": 2}
-             act_level = level_map.get(lifestyle, 1)
-             
-             return jsonify({
-                 'success': True,
-                 'sleep_hours': sleep_h,
-                 'activity_level': act_level,
-                 'activity_label': lifestyle,
-                 'avg_sleep': averages.get('avg_sleep'),
-                 'common_lifestyle': averages.get('common_lifestyle'),
-                 'features': {},
-                 'raw_samples': [],
-                 'message': 'Simulated data from CSV (Hardware not connected)'
-             })
-             
-        return jsonify({'success': False, 'error': f'Cannot open {PORT} and no CSV data: {e}'}), 503
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'Unexpected error: {e}'}), 503
+    # MovingAverage class
+    class MovingAverage:
+        def __init__(self, window: int):
+            self._buf = collections.deque(maxlen=window)
+            self._total = 0.0
 
-    def read_line(ser):
+        def update(self, v: float) -> float:
+            if len(self._buf) == self._buf.maxlen:
+                self._total -= self._buf[0]
+            self._buf.append(v)
+            self._total += v
+            return self._total / len(self._buf)
+
+    # Helper functions from sleep_lifestyle.py
+    def compute_motion(ax: float, ay: float, az: float) -> float:
+        return abs(math.sqrt(ax**2 + ay**2 + az**2) - 1.0)
+
+    def read_line(ser: serial.Serial) -> dict:
         try:
             raw = ser.readline()
             if not raw:
@@ -984,110 +1095,244 @@ def read_hardware_sleep():
             line = raw.decode("utf-8", errors="replace").strip()
             if not line:
                 return None
-            if line.startswith("ERR") or line.startswith("#") or not line[0].isdigit():
+            # Skip startup messages, errors, comments, header
+            if line.startswith("ERR"):
+                return None
+            if line.startswith("#"):
+                return None
+            if line.startswith(CSV_HEADER):
+                return None
+            # Skip any line that isn't pure CSV
+            if not line[0].isdigit():
                 return None
             parts = line.split(",")
             if len(parts) != 6:
                 return None
             return {
-                "timestamp":  int(parts[0]),
-                "ax":         float(parts[1]),
-                "ay":         float(parts[2]),
-                "az":         float(parts[3]),
-                "ir":         int(parts[4]),
+                "timestamp": int(parts[0]),
+                "ax": float(parts[1]),
+                "ay": float(parts[2]),
+                "az": float(parts[3]),
+                "ir": int(parts[4]),
                 "heart_rate": int(parts[5]),
             }
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             return None
 
-    # Collect a window of samples
-    samples = []
-    start_time = time.time()
-    while len(samples) < SAMPLES_PER_WINDOW and (time.time() - start_time) < 20:
-        sample = read_line(ser)
-        if sample:
-            samples.append(sample)
+    def extract_features(motion_win: list, hr_win: list, ir_win: list) -> dict:
+        n = len(motion_win)
+        if n == 0:
+            return {
+                "avg_motion": 0.0, "motion_variance": 0.0, "avg_hr": 0.0,
+                "hr_ok": False, "finger_ok": False, "valid_hr_frac": 0.0,
+                "finger_frac": 0.0, "avg_ir": 0.0, "sedentary_pct": 0.0,
+                "active_pct": 0.0, "light_pct": 0.0,
+            }
 
-    ser.close()
-    if len(samples) < SAMPLES_PER_WINDOW // 2:
-        return jsonify({'success': False, 'error': 'Not enough valid samples received from Arduino.'}), 500
+        avg_m = sum(motion_win) / n
+        var_m = sum((x - avg_m) ** 2 for x in motion_win) / n
 
-    # Compute features
-    def compute_motion(ax, ay, az):
-        return abs(math.sqrt(ax**2 + ay**2 + az**2) - 1.0)
+        sed_n = sum(1 for m in motion_win if m < MOTION_SEDENTARY)
+        act_n = sum(1 for m in motion_win if m > MOTION_ACTIVE)
+        lit_n = n - sed_n - act_n
 
-    motion_win = [compute_motion(s['ax'], s['ay'], s['az']) for s in samples]
-    hr_win = [s['heart_rate'] for s in samples]
-    ir_win = [s['ir'] for s in samples]
-    n = len(motion_win)
-    avg_m = sum(motion_win) / n
-    var_m = sum((x - avg_m) ** 2 for x in motion_win) / n
-    sed_n = sum(1 for m in motion_win if m < MOTION_SEDENTARY)
-    act_n = sum(1 for m in motion_win if m > MOTION_ACTIVE)
-    lit_n = n - sed_n - act_n
-    finger_samples = [ir for ir in ir_win if ir >= IR_FINGER_THRESH]
-    finger_frac = len(finger_samples) / n
-    finger_ok = finger_frac >= FINGER_VALID_FRAC
-    avg_ir = sum(ir_win) / len(ir_win) if ir_win else 0.0
-    valid_hr = [h for h, ir in zip(hr_win, ir_win) if ir >= IR_FINGER_THRESH and MIN_VALID_HR <= h <= MAX_VALID_HR]
-    valid_frac = len(valid_hr) / n
-    avg_hr = sum(valid_hr) / len(valid_hr) if valid_hr else 0.0
-    hr_ok = finger_ok and (valid_frac >= HR_VALID_FRAC)
-    features = {
-        "avg_motion": avg_m,
-        "motion_variance": var_m,
-        "avg_hr": avg_hr,
-        "hr_ok": hr_ok,
-        "finger_ok": finger_ok,
-        "valid_hr_frac": valid_frac,
-        "finger_frac": finger_frac,
-        "avg_ir": avg_ir,
-        "sedentary_pct": (sed_n / n) * 100,
-        "active_pct": (act_n / n) * 100,
-        "light_pct": (lit_n / n) * 100,
-    }
-    # Sleep detection
-    motion_ok = (features["avg_motion"] < 0.15 and features["motion_variance"] < 0.02)
-    sleep_state = "awake"
-    if motion_ok and features["finger_ok"]:
+        # Finger presence from IR
+        finger_samples = [ir for ir in ir_win if ir >= IR_FINGER_THRESH]
+        finger_frac = len(finger_samples) / n
+        finger_ok = finger_frac >= FINGER_VALID_FRAC
+        avg_ir = sum(ir_win) / len(ir_win) if ir_win else 0.0
+
+        # Only count HR when finger confirmed present
+        valid_hr = [
+            h for h, ir in zip(hr_win, ir_win)
+            if ir >= IR_FINGER_THRESH and MIN_VALID_HR <= h <= MAX_VALID_HR
+        ]
+        valid_frac = len(valid_hr) / n
+        avg_hr = sum(valid_hr) / len(valid_hr) if valid_hr else 0.0
+        hr_ok = finger_ok and (valid_frac >= HR_VALID_FRAC)
+
+        return {
+            "avg_motion": avg_m, "motion_variance": var_m, "avg_hr": avg_hr,
+            "hr_ok": hr_ok, "finger_ok": finger_ok, "valid_hr_frac": valid_frac,
+            "finger_frac": finger_frac, "avg_ir": avg_ir,
+            "sedentary_pct": (sed_n / n) * 100, "active_pct": (act_n / n) * 100,
+            "light_pct": (lit_n / n) * 100,
+        }
+
+    def detect_sleep(features: dict) -> str:
+        motion_ok = (
+            features["avg_motion"] < MOTION_SLEEP_MAX and
+            features["motion_variance"] < MOTION_VAR_MAX
+        )
+        if not motion_ok:
+            return "awake"
+
+        if not features["finger_ok"]:
+            return "awake"
+
         if features["hr_ok"]:
             hr = features["avg_hr"]
-            if hr > 90:
-                sleep_state = "awake"
-            elif 40 <= hr <= 90:
-                sleep_state = "sleep"
-            else:
-                sleep_state = "awake"
+            if hr > HR_STRESS_MAX:
+                return "awake"
+            return "sleep" if HR_SLEEP_MIN <= hr <= HR_SLEEP_MAX else "awake"
+
+        return "awake"
+
+    def classify_lifestyle(features: dict) -> int:
+        if features["sedentary_pct"] > 60:
+            level = 0
+        elif features["active_pct"] > 30:
+            level = 2
         else:
-            sleep_state = "awake"
-    # Activity classification
-    if features["sedentary_pct"] > 60:
-        activity_level = 0
-    elif features["active_pct"] > 30:
-        activity_level = 2
-    else:
-        activity_level = 1
-    if activity_level == 0 and features["hr_ok"] and features["avg_hr"] > 85:
-        activity_level = 1
-    # Sleep hours estimate (for this window only)
-    sleep_hours = round((sleep_state == "sleep") * (ANALYSIS_WINDOW_SEC / 3600.0), 2)
-    
-    # Save to CSV
-    save_sensor_data_to_csv(sleep=sleep_hours, lifestyle=LEVEL_NAMES[activity_level])
-    
-    # Get updated averages
-    averages = get_averages_from_csv() or {}
-    
-    return jsonify({
-        'success': True,
-        'sleep_hours': sleep_hours,
-        'activity_level': activity_level,
-        'activity_label': LEVEL_NAMES[activity_level],
-        'avg_sleep': averages.get('avg_sleep'),
-        'common_lifestyle': averages.get('common_lifestyle'),
-        'features': features,
-        'raw_samples': samples[-5:]  # last 5 samples for debug
-    })
+            level = 1
+        if level == 0 and features["hr_ok"] and features["avg_hr"] > HR_RESTING_MAX:
+            level = 1
+        return level
+
+    # Try to connect to hardware
+    try:
+        ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
+        time.sleep(2)
+        ser.reset_input_buffer()
+    except serial.SerialException as e:
+        # Fallback to CSV simulation
+        print(f"Hardware not found on {PORT} ({e}), using CSV data...")
+        csv_data = get_sensor_data_from_csv()
+
+        if csv_data:
+            try:
+                sleep_h = float(csv_data.get('sleep', 7.0))
+            except ValueError:
+                sleep_h = 7.0
+
+            lifestyle = csv_data.get('lifestyle', 'Lightly Active')
+
+            # Save simulated value to CSV
+            save_sensor_data_to_csv(sleep=sleep_h, lifestyle=lifestyle)
+
+            # Get updated averages
+            averages = get_averages_from_csv() or {}
+
+            level_map = {"Sedentary": 0, "Lightly Active": 1, "Moderate": 1, "Active": 2}
+            act_level = level_map.get(lifestyle, 1)
+
+            return jsonify({
+                'success': True,
+                'message': 'Simulated data from CSV (Hardware not connected)',
+                'device_connected': False,
+                'sleep_hours': sleep_h,
+                'activity_level': act_level,
+                'activity_label': lifestyle,
+                'heart_rate': 72,  # Simulated heart rate
+                'avg_sleep': averages.get('avg_sleep'),
+                'common_lifestyle': averages.get('common_lifestyle'),
+                'features': {'avg_hr': 72},
+                'raw_samples': []
+            })
+
+        return jsonify({
+            'success': False,
+            'message': f'Cannot connect to {PORT} and no CSV data: {str(e)}',
+            'device_connected': False,
+            'error': str(e)
+        }), 503
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Unexpected error: {str(e)}',
+            'device_connected': False,
+            'error': str(e)
+        }), 503
+
+    # Collect samples from hardware
+    motion_smoother = MovingAverage(SMOOTH_WINDOW)
+    motion_buf = collections.deque(maxlen=SAMPLES_PER_WINDOW)
+    hr_buf = collections.deque(maxlen=SAMPLES_PER_WINDOW)
+    ir_buf = collections.deque(maxlen=SAMPLES_PER_WINDOW)
+
+    sample_count = 0
+    start_time = time.time()
+    no_data_count = 0
+    max_no_data = SAMPLE_RATE_HZ * 10  # 10 seconds with no data
+
+    try:
+        while sample_count < SAMPLES_PER_WINDOW and (time.time() - start_time) < 25:
+            rec = read_line(ser)
+            if rec is None:
+                no_data_count += 1
+                if no_data_count > max_no_data:
+                    break
+                continue
+            else:
+                no_data_count = 0
+
+            # Motion processing
+            motion_raw = compute_motion(rec["ax"], rec["ay"], rec["az"])
+            motion_smoother.update(motion_raw)
+            motion_buf.append(motion_raw)
+
+            # IR processing
+            ir_buf.append(rec["ir"])
+
+            # HR processing - store 0 when no finger so it gets filtered
+            if rec["ir"] >= IR_FINGER_THRESH:
+                hr_buf.append(rec["heart_rate"])
+            else:
+                hr_buf.append(0)
+
+            sample_count += 1
+
+        ser.close()
+
+        if sample_count < SAMPLES_PER_WINDOW // 2:
+            return jsonify({
+                'success': False,
+                'message': f'Not enough valid samples received from Arduino (got {sample_count}, needed {SAMPLES_PER_WINDOW//2})',
+                'device_connected': True,
+                'error': 'Insufficient samples'
+            }), 500
+
+        # Feature extraction
+        features = extract_features(list(motion_buf), list(hr_buf), list(ir_buf))
+        sleep_label = detect_sleep(features)
+        activity_level = classify_lifestyle(features)
+
+        # Sleep hours estimate (for this window only)
+        sleep_hours = round((sleep_label == "sleep") * (ANALYSIS_WINDOW_SEC / 3600.0), 2)
+
+        # Save to CSV
+        save_sensor_data_to_csv(sleep=sleep_hours, lifestyle=LEVEL_NAMES[activity_level])
+
+        # Get updated averages
+        averages = get_averages_from_csv() or {}
+
+        return jsonify({
+            'success': True,
+            'message': 'Successfully read from sleep/activity sensor',
+            'device_connected': True,
+            'sleep_hours': sleep_hours,
+            'activity_level': activity_level,
+            'activity_label': LEVEL_NAMES[activity_level],
+            'heart_rate': round(features['avg_hr']) if features['avg_hr'] > 0 else None,
+            'avg_sleep': averages.get('avg_sleep'),
+            'common_lifestyle': averages.get('common_lifestyle'),
+            'features': features,
+            'raw_samples': list(motion_buf)[-5:] if motion_buf else []  # last 5 samples for debug
+        })
+
+    except Exception as e:
+        try:
+            ser.close()
+        except:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Failed to read from sensor: {str(e)}',
+            'device_connected': True,
+            'error': str(e)
+        }), 500
 
 
 # ============================================================================
