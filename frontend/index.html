@@ -1046,7 +1046,7 @@ function render(dir){
     card.innerHTML=renderResult();
     setTimeout(()=>{
       const gp=document.getElementById("gPath");
-      if(gp)gp.style.strokeDashoffset=283-(283*state.risk.pct/100);
+      if(gp)gp.style.strokeDashoffset=267-(267*state.risk.pct/100);
       const rf=document.getElementById("rlcf");
       if(rf)rf.style.width=state.risk.pct+"%";
     },120);

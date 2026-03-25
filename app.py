@@ -676,18 +676,26 @@ Patient Risk Profile:
 Current Recommendations:
 {chr(10).join(['- ' + rec for rec in recommendations]) if recommendations else 'None provided'}
 
-Based on this information, provide personalized, actionable advice for reducing diabetes risk.
+Based on this information, provide comprehensive, personalized, and actionable advice for reducing diabetes risk.
 Include specific lifestyle changes, dietary recommendations, exercise plans, and monitoring strategies.
-Keep the response concise (under 500 words) and organized with clear sections."""
+
+CRITICAL FORMATTING INSTRUCTIONS:
+1. The output will be displayed in a simple text view that does NOT support Markdown.
+2. DO NOT use asterisks (**) for bolding.
+3. DO NOT use hashtags (###) for headers.
+4. Instead, use CAPITALIZED TEXT for section headers and emphasis.
+5. Use plain hyphens (-) or bullets (•) for lists.
+6. Keep the response detailed (around 300-400 words) and organized with clear sections using capitalization.
+"""
 
         # Configure Gemini client - pass the API key explicitly
         client = genai.Client(api_key=api_key)
 
         # Strategy: Try multiple models starting with the latest ones
+        # Using a more standard model name first
         models_to_try = [
-            "models/gemini-2.5-flash",        # Latest and best
-            "models/gemini-2.0-flash",        # Backup
-            "models/gemini-flash-latest"      # Generic latest
+            "gemini-2.0-flash",        # Latest and best
+            "gemini-1.5-flash"         # Backup
         ]
 
         response = None
