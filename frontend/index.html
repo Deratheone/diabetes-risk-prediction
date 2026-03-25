@@ -570,10 +570,6 @@ function renderGlucoseReader(){
     </div>`;
   }
   if(state.hardware_glucose!==null){
-    const confidence=state.hardware_glucose_confidence||"unknown";
-    let confClass="conf-low";
-    if(confidence==="high")confClass="conf-high";
-    else if(confidence==="medium")confClass="conf-medium";
     return`<div class="hardware-reader anim-in">
       <div class="reader-success">
         ${state.hardware_glucose_rgb?`<div class="reader-value">
@@ -588,9 +584,6 @@ function renderGlucoseReader(){
           <div class="reader-value-label">Match Distance</div>
           <div class="reader-value-data">${state.hardware_glucose_distance}</div>
         </div>`:""}
-        <div style="text-align:center;padding:8px 0">
-          <span class="confidence-badge ${confClass}">Confidence: ${confidence}</span>
-        </div>
         <div class="hw-info">
           <span>ℹ️</span>
           <span>This reading will be a major factor in your risk assessment</span>
@@ -716,8 +709,7 @@ function renderOldStep2(){
   const female=isFemale();
   const g=parseFloat(state.glucose),gc=glucoseCat(g);
   const gpct=g?Math.min(Math.max(((g-60)/200)*100,0),100):0;
-  return sth("🧪","Clinical Inputs","Recent medical measurements")+
-  `<div class="fgrid c2">
+  return `<div class="fgrid c2">
     ${female?field("preg","Number of Pregnancies","count","e.g. 2",state.pregnancies,"Enter 0 if no pregnancies",""):""}
     ${field("bp","Diastolic Blood Pressure","mm Hg","e.g. 72",state.bp,"",state.errors.bp)}
     ${field("glucose","Fasting Blood Glucose","mg/dL","e.g. 95",state.glucose,"Fasting glucose from your latest blood test",state.errors.glucose)}

@@ -466,44 +466,54 @@ def read_hardware_glucose():
         "error": str (if any)
     }
     """
+    import serial
+    import time
+    PORT = "COM9"
+    BAUD_RATE = 9600
     try:
-        from glucose_reader import read_glucose
-        
-        result = read_glucose()
-        
-        if result.get('success'):
-            return jsonify({
-                'success': True,
-                'message': 'Glucose reading successful',
-                'device_connected': True,
-                'glucose_level': result.get('glucose_level'),
-                'glucose_value': result.get('glucose_value'),
-                'match_distance': result.get('match_distance'),
-                'confidence': result.get('confidence'),
-                'is_no_strip': result.get('is_no_strip'),
-                'serial_output': result.get('serial_output', [])
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': result.get('error', 'Unknown error'),
-                'device_connected': False,
-                'error': result.get('error')
-            }), 503
-    
-    except ImportError:
+        ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
+        time.sleep(2)
+        ser.reset_input_buffer()
+    except serial.SerialException as e:
         return jsonify({
             'success': False,
-            'message': 'Glucose reader module not found',
+            'message': f'Cannot connect to {PORT}: {str(e)}',
             'device_connected': False,
-            'error': 'glucose_reader module not available'
+            'error': str(e)
         }), 503
-    
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': str(e),
+            'message': f'Unexpected error: {str(e)}',
             'device_connected': False,
+            'error': str(e)
+        }), 503
+
+    output_lines = []
+    start_time = time.time()
+    # Read all serial output for 12 seconds (enough for countdown + result)
+    try:
+        while time.time() - start_time < 12:
+            if ser.in_waiting:
+                raw = ser.readline()
+                if raw:
+                    line = raw.decode("utf-8", errors="replace").strip()
+                    output_lines.append(line)
+            else:
+                time.sleep(0.05)
+        ser.close()
+        return jsonify({
+            'success': True,
+            'message': 'Raw output from glucose analyzer',
+            'device_connected': True,
+            'serial_output': output_lines[-30:]  # last 30 lines for frontend
+        })
+    except Exception as e:
+        ser.close()
+        return jsonify({
+            'success': False,
+            'message': f'Failed to read serial output: {str(e)}',
+            'device_connected': True,
             'error': str(e)
         }), 500
 
@@ -715,102 +725,134 @@ def read_hardware_sleep():
         "error": str (if any)
     }
     """
+    import serial
+    import time
+    import math
+    PORT = "COM5"
+    BAUD_RATE = 115200
+    SAMPLE_RATE_HZ = 20
+    ANALYSIS_WINDOW_SEC = 15
+    SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * ANALYSIS_WINDOW_SEC
+    IR_FINGER_THRESH = 50000
+    MIN_VALID_HR = 40
+    MAX_VALID_HR = 180
+    HR_VALID_FRAC = 0.25
+    FINGER_VALID_FRAC = 0.25
+    MOTION_SEDENTARY = 0.15
+    MOTION_ACTIVE = 0.50
+    LEVEL_NAMES = {0: "Sedentary", 1: "Lightly Active", 2: "Active"}
     try:
-        import tempfile
-        import json as json_lib
-        
-        # Create a temporary file to capture output
-        with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as tmp:
-            tmp_path = tmp.name
-        
-        try:
-            # Run the sleep_lifestyle.py script with a 30-second timeout
-            result = subprocess.run(
-                [sys.executable, 'hardware integration/sleep_lifestyle.py', '--port', 'COM5'],
-                capture_output=True,
-                text=True,
-                timeout=35  # Slightly longer than the script's internal timeout
-            )
-            
-            output_lines = result.stdout.split('\n') if result.stdout else []
-            
-            # Parse the output to extract SLEEP_HOURS and ACTIVITY_LEVEL
-            sleep_hours = None
-            activity_level = None
-            activity_label = "Unknown"
-            
-            for line in output_lines:
-                if 'SLEEP_HOURS:' in line:
-                    try:
-                        sleep_hours = float(line.split(':', 1)[-1].strip())
-                    except:
-                        pass
-                elif 'ACTIVITY_LEVEL:' in line:
-                    try:
-                        parts = line.split(':')
-                        activity_level = int(parts[1].strip().split()[0])
-                        # Extract activity label from the line
-                        if '(Sedentary)' in line:
-                            activity_label = "Sedentary"
-                        elif '(Lightly Active)' in line:
-                            activity_label = "Lightly Active"
-                        elif '(Active)' in line:
-                            activity_label = "Active"
-                    except:
-                        pass
-            
-            if sleep_hours is not None and activity_level is not None:
-                return jsonify({
-                    'success': True,
-                    'message': 'Sleep reading successful',
-                    'device_connected': True,
-                    'sleep_hours': sleep_hours,
-                    'activity_level': activity_level,
-                    'activity_label': activity_label,
-                    'serial_output': output_lines[-20:]  # Last 20 lines
-                })
-            else:
-                # Script ran but couldn't parse output
-                error_msg = result.stderr if result.stderr else 'Could not parse sleep data from output'
-                return jsonify({
-                    'success': False,
-                    'message': error_msg,
-                    'device_connected': False,
-                    'error': error_msg,
-                    'serial_output': output_lines[-10:]
-                }), 503
-        
-        finally:
-            # Clean up temp file
-            try:
-                import os as os_module
-                os_module.unlink(tmp_path)
-            except:
-                pass
-    
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            'success': False,
-            'message': 'Sleep reader timeout - device may not be responding',
-            'device_connected': False,
-            'error': 'Device timeout (>30 seconds)'
-        }), 503
-    
-    except FileNotFoundError:
-        return jsonify({
-            'success': False,
-            'message': 'sleep_lifestyle.py script not found',
-            'device_connected': False,
-            'error': 'sleep_lifestyle.py not found in hardware integration folder'
-        }), 503
-    
+        ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
+        time.sleep(2)
+        ser.reset_input_buffer()
+    except serial.SerialException as e:
+        return jsonify({'success': False, 'error': f'Cannot open {PORT}: {e}'}), 503
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': str(e),
-            'device_connected': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': f'Unexpected error: {e}'}), 503
+
+    def read_line(ser):
+        try:
+            raw = ser.readline()
+            if not raw:
+                return None
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                return None
+            if line.startswith("ERR") or line.startswith("#") or not line[0].isdigit():
+                return None
+            parts = line.split(",")
+            if len(parts) != 6:
+                return None
+            return {
+                "timestamp":  int(parts[0]),
+                "ax":         float(parts[1]),
+                "ay":         float(parts[2]),
+                "az":         float(parts[3]),
+                "ir":         int(parts[4]),
+                "heart_rate": int(parts[5]),
+            }
+        except Exception:
+            return None
+
+    # Collect a window of samples
+    samples = []
+    start_time = time.time()
+    while len(samples) < SAMPLES_PER_WINDOW and (time.time() - start_time) < 20:
+        sample = read_line(ser)
+        if sample:
+            samples.append(sample)
+
+    ser.close()
+    if len(samples) < SAMPLES_PER_WINDOW // 2:
+        return jsonify({'success': False, 'error': 'Not enough valid samples received from Arduino.'}), 500
+
+    # Compute features
+    def compute_motion(ax, ay, az):
+        return abs(math.sqrt(ax**2 + ay**2 + az**2) - 1.0)
+
+    motion_win = [compute_motion(s['ax'], s['ay'], s['az']) for s in samples]
+    hr_win = [s['heart_rate'] for s in samples]
+    ir_win = [s['ir'] for s in samples]
+    n = len(motion_win)
+    avg_m = sum(motion_win) / n
+    var_m = sum((x - avg_m) ** 2 for x in motion_win) / n
+    sed_n = sum(1 for m in motion_win if m < MOTION_SEDENTARY)
+    act_n = sum(1 for m in motion_win if m > MOTION_ACTIVE)
+    lit_n = n - sed_n - act_n
+    finger_samples = [ir for ir in ir_win if ir >= IR_FINGER_THRESH]
+    finger_frac = len(finger_samples) / n
+    finger_ok = finger_frac >= FINGER_VALID_FRAC
+    avg_ir = sum(ir_win) / len(ir_win) if ir_win else 0.0
+    valid_hr = [h for h, ir in zip(hr_win, ir_win) if ir >= IR_FINGER_THRESH and MIN_VALID_HR <= h <= MAX_VALID_HR]
+    valid_frac = len(valid_hr) / n
+    avg_hr = sum(valid_hr) / len(valid_hr) if valid_hr else 0.0
+    hr_ok = finger_ok and (valid_frac >= HR_VALID_FRAC)
+    features = {
+        "avg_motion": avg_m,
+        "motion_variance": var_m,
+        "avg_hr": avg_hr,
+        "hr_ok": hr_ok,
+        "finger_ok": finger_ok,
+        "valid_hr_frac": valid_frac,
+        "finger_frac": finger_frac,
+        "avg_ir": avg_ir,
+        "sedentary_pct": (sed_n / n) * 100,
+        "active_pct": (act_n / n) * 100,
+        "light_pct": (lit_n / n) * 100,
+    }
+    # Sleep detection
+    motion_ok = (features["avg_motion"] < 0.15 and features["motion_variance"] < 0.02)
+    sleep_state = "awake"
+    if motion_ok and features["finger_ok"]:
+        if features["hr_ok"]:
+            hr = features["avg_hr"]
+            if hr > 90:
+                sleep_state = "awake"
+            elif 40 <= hr <= 90:
+                sleep_state = "sleep"
+            else:
+                sleep_state = "awake"
+        else:
+            sleep_state = "awake"
+    # Activity classification
+    if features["sedentary_pct"] > 60:
+        activity_level = 0
+    elif features["active_pct"] > 30:
+        activity_level = 2
+    else:
+        activity_level = 1
+    if activity_level == 0 and features["hr_ok"] and features["avg_hr"] > 85:
+        activity_level = 1
+    # Sleep hours estimate (for this window only)
+    sleep_hours = round((sleep_state == "sleep") * (ANALYSIS_WINDOW_SEC / 3600.0), 2)
+    return jsonify({
+        'success': True,
+        'sleep_hours': sleep_hours,
+        'activity_level': activity_level,
+        'activity_label': LEVEL_NAMES[activity_level],
+        'features': features,
+        'raw_samples': samples[-5:]  # last 5 samples for debug
+    })
 
 
 # ============================================================================

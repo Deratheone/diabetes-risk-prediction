@@ -336,10 +336,23 @@ def run(port: str, verbose: bool):
     print(f"[monitor] Press Ctrl+C to stop.\n")
 
     try:
+        no_data_count = 0
+        max_no_data = SAMPLE_RATE_HZ * 10  # 10 seconds with no data
+
         while True:
+
             rec = read_line(ser)
             if rec is None:
+                no_data_count += 1
+                if no_data_count > max_no_data:
+                    print("\n[ERROR] No serial data received for 10 seconds. Exiting.")
+                    break
                 continue
+            else:
+                no_data_count = 0  # Reset on good data
+                # Warn if no finger detected
+                if rec["ir"] < IR_FINGER_THRESH:
+                    print("[WARNING] No finger detected on sensor. Please place your finger.", end="\r")
 
             # Motion
             motion_raw = compute_motion(rec["ax"], rec["ay"], rec["az"])
