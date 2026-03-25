@@ -378,7 +378,6 @@ let state={
   hardware_glucose:null,hardware_glucose_confidence:"unknown",
   hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
   hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
-  hardware_heart_rate:null,
   show_hardware_modal:false,hardware_reading_glucose:false,
   hardware_reading_sleep:false,hardware_current_view:null,
   hardware_error:null,
@@ -650,10 +649,6 @@ function renderSleepReader(){
         <div class="reader-value">
           <div class="reader-value-label">Activity Level</div>
           <div class="reader-value-data">${state.hardware_activity_label||state.hardware_activity_level||"Moderate"}</div>
-        </div>
-        <div class="reader-value">
-          <div class="reader-value-label">Heart Rate (Avg)</div>
-          <div class="reader-value-data">${state.hardware_heart_rate ? state.hardware_heart_rate + " bpm" : "N/A"}</div>
         </div>
         <div class="hw-info">
           <span>ℹ️</span>
@@ -1046,7 +1041,7 @@ function render(dir){
     card.innerHTML=renderResult();
     setTimeout(()=>{
       const gp=document.getElementById("gPath");
-      if(gp)gp.style.strokeDashoffset=267-(267*state.risk.pct/100);
+      if(gp)gp.style.strokeDashoffset=283-(283*state.risk.pct/100);
       const rf=document.getElementById("rlcf");
       if(rf)rf.style.width=state.risk.pct+"%";
     },120);
@@ -1222,12 +1217,31 @@ function attach(){
       const resp=await fetch("/api/read-hardware/glucose",{method:"POST"});
       const data=await resp.json();
       if(data.success){
+        // Step 1: Show current reading
         state.hardware_glucose=data.glucose_value||0;
         state.hardware_glucose_confidence=data.confidence||"unknown";
         state.hardware_glucose_level=data.glucose_level||"";
         state.hardware_glucose_rgb=data.is_no_strip?"":`R:${data.serial_output?data.serial_output.find(l=>l.includes("Avg Normalised"))?.split(":")[1]||"N/A":"N/A"}`;
         state.hardware_glucose_distance=data.match_distance?`${data.match_distance.toFixed(2)} ${data.match_distance>20?"(Low match)":"(Good match)"}`.trim():"";
-        showToast("Data Saved", "Glucose reading saved to CSV file");
+        render();
+
+        // Step 2: Simulate Fetching History
+        if (data.avg_glucose) {
+            setTimeout(() => {
+                showToast("Fetching History", "Retrieving historical data from sensor_data.csv...", "info");
+                
+                setTimeout(() => {
+                    // Step 3: Update with Average
+                    const oldVal = state.hardware_glucose;
+                    state.hardware_glucose = data.avg_glucose;
+                    state.hardware_glucose_level = data.avg_glucose > 125 ? "High" : "Normal"; // Re-evaluate level
+                    showToast("Data Updated", `Using 7-day average: ${data.avg_glucose} (was ${oldVal})`);
+                    render();
+                }, 2000); // 2 second delay for "fetching" simulation
+            }, 1000);
+        } else {
+             showToast("Data Saved", "Glucose reading saved to CSV file");
+        }
       }else{
         state.hardware_error=data.message||data.error||"Failed to read glucose analyzer";
       }
@@ -1251,15 +1265,27 @@ function attach(){
         state.hardware_sleep_hours=data.sleep_hours||0;
         state.hardware_activity_level=data.activity_level||0;
         state.hardware_activity_label=data.activity_label||"Unknown";
-        // Extract HR if available (check features then direct prop)
-        if (data.features && data.features.avg_hr) {
-          state.hardware_heart_rate = Math.round(data.features.avg_hr);
-        } else if (data.heart_rate) {
-          state.hardware_heart_rate = data.heart_rate;
+        render();
+        
+        if (data.avg_sleep) {
+            setTimeout(() => {
+                showToast("Fetching History", "Retrieving historical data from sensor_data.csv...", "info");
+                setTimeout(() => {
+                    const oldSleep = state.hardware_sleep_hours;
+                    state.hardware_sleep_hours = data.avg_sleep;
+                    if (data.common_lifestyle) {
+                        state.hardware_activity_label = data.common_lifestyle;
+                        // Map lifestyle string back to level if needed, but we mainly display label
+                        const level_map = {"Sedentary": 0, "Lightly Active": 1, "Moderate": 1, "Active": 2};
+                        state.hardware_activity_level = level_map[data.common_lifestyle] || 1;
+                    }
+                    showToast("Data Updated", `Using 7-day average: ${data.avg_sleep}hrs (was ${oldSleep}hrs)`);
+                    render();
+                }, 2000);
+            }, 1000);
         } else {
-          state.hardware_heart_rate = null;
+            showToast("Data Saved", "Sleep & Activity data saved to CSV file");
         }
-        showToast("Data Saved", "Sleep & Activity data saved to CSV file");
       }else{
         state.hardware_error=data.message||data.error||"Failed to read sleep tracker";
       }
@@ -1540,7 +1566,6 @@ function attach(){
       hardware_glucose:null,hardware_glucose_confidence:"unknown",
       hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
       hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
-      hardware_heart_rate:null,
       show_hardware_modal:false,hardware_reading_glucose:false,hardware_reading_sleep:false,
       hardware_current_view:null,hardware_error:null,
       // Reset risk reduction state
@@ -1554,34 +1579,13 @@ function attach(){
 function showToast(title, message, type = 'success') {
   const container = document.getElementById('toast-container');
   if (!container) return;
-
   const toast = document.createElement('div');
   toast.className = 'toast';
-  
   const icon = type === 'success' ? '✓' : 'ℹ';
-  
-  toast.innerHTML = `
-    <div class="toast-icon">${icon}</div>
-    <div class="toast-content">
-      <div class="toast-title">${title}</div>
-      <div class="toast-msg">${message}</div>
-    </div>
-  `;
-  
+  toast.innerHTML = `<div class="toast-icon">${icon}</div><div class="toast-content"><div class="toast-title">${title}</div><div class="toast-msg">${message}</div></div>`;
   container.appendChild(toast);
-  
-  // Trigger animation
-  requestAnimationFrame(() => {
-    toast.classList.add('show');
-  });
-  
-  // Remove after 3 seconds
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => {
-      toast.remove();
-    }, 400);
-  }, 3000);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 3000);
 }
 
 // ── Init ──
