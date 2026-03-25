@@ -70,6 +70,14 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.colors import LinearSegmentedColormap
 
+# HbA1c Prediction
+try:
+    from hba1c_model import HbA1cPredictor
+    HBA1C_AVAILABLE = True
+except ImportError:
+    HBA1C_AVAILABLE = False
+    print("Warning: HbA1c model not found. HbA1c predictions will be disabled.")
+
 # ============================================================================
 #  CONFIGURATION
 # ============================================================================
@@ -719,7 +727,8 @@ class ReportGenerator:
         self,
         probability: float,
         features: Dict[str, float],
-        explanation: Dict = None
+        explanation: Dict = None,
+        hba1c_result: Dict = None
     ) -> Dict[str, Any]:
         """Generate comprehensive clinical report."""
 
@@ -738,7 +747,7 @@ class ReportGenerator:
         recommendations = self.risk_assessor.generate_recommendations(probability, features)
 
         # Clinical summary
-        summary = self._generate_clinical_summary(probability, risk_category, features)
+        summary = self._generate_clinical_summary(probability, risk_category, features, hba1c_result)
 
         # Feature analysis
         feature_analysis = self._analyze_key_features(features)
@@ -753,14 +762,16 @@ class ReportGenerator:
             "future_risk": future_risk,
             "recommendations": recommendations,
             "warning_level": self._get_warning_level(risk_category),
-            "explanation": explanation
+            "explanation": explanation,
+            "hba1c_prediction": hba1c_result
         }
 
     def _generate_clinical_summary(
         self,
         probability: float,
         risk_category: RiskCategory,
-        features: Dict[str, float]
+        features: Dict[str, float],
+        hba1c_result: Dict = None
     ) -> str:
         """Generate doctor-like clinical summary."""
 
@@ -827,7 +838,19 @@ class ReportGenerator:
         else:
             closing = " Continue current healthy lifestyle practices."
 
-        return f"{opening}{contrib_text}{outlook}{closing}"
+        # Add HbA1c information if available
+        hba1c_text = ""
+        if hba1c_result:
+            hba1c_value = hba1c_result.get('hba1c_value', 0)
+            hba1c_category = hba1c_result.get('category', 'Unknown')
+            hba1c_interpretation = hba1c_result.get('interpretation', '')
+
+            hba1c_text = (
+                f" Your estimated HbA1c is {hba1c_value:.1f}%, indicating {hba1c_category.lower()} "
+                f"glucose control over the past 2-3 months. {hba1c_interpretation}"
+            )
+
+        return f"{opening}{contrib_text}{outlook}{hba1c_text}{closing}"
 
     def _analyze_key_features(self, features: Dict[str, float]) -> Dict[str, Dict]:
         """Analyze key clinical indicators."""
@@ -904,6 +927,18 @@ class ReportGenerator:
         for name, data in report["key_indicators"].items():
             flag = " [CONCERN]" if data["concern"] else ""
             print(f"    {name}: {data['value']} {data['unit']} - {data['status']}{flag}")
+
+        # HbA1c Prediction
+        if report.get("hba1c_prediction"):
+            hba1c = report["hba1c_prediction"]
+            print(f"\n  HbA1c PREDICTION (Long-term Glucose Control):")
+            print("  " + "-" * 66)
+            print(f"    Estimated HbA1c: {hba1c['hba1c_value']}%")
+            print(f"    Category: {hba1c['category']}")
+            print(f"    Risk Level: {hba1c['risk_level']}")
+            print(f"    Interpretation: {hba1c['message']}")
+            print(f"\n  This estimate reflects your average blood glucose over")
+            print(f"  the past 2-3 months based on current metabolic factors.")
 
         # Future risk
         print(f"\n  FUTURE RISK PROJECTION:")
@@ -1133,6 +1168,18 @@ class DiabetesPredictor:
         self.X_train = None
         self.y_test = None
 
+        # Initialize HbA1c predictor
+        if HBA1C_AVAILABLE:
+            self.hba1c_predictor = HbA1cPredictor()
+            try:
+                self.hba1c_predictor.load_model('models/hba1c_model.joblib')
+                print("[+] HbA1c prediction model loaded successfully")
+            except FileNotFoundError:
+                print("[!] HbA1c model not found, will be disabled")
+                self.hba1c_predictor = None
+        else:
+            self.hba1c_predictor = None
+
     def train(self, data_path: str = None, use_lifestyle: bool = False):
         """
         Train the diabetes prediction system.
@@ -1248,6 +1295,17 @@ class DiabetesPredictor:
         # Predict probability
         probability = self.trainer.best_model.predict_proba(feature_vector_scaled)[0, 1]
 
+        # Predict HbA1c if available
+        hba1c_result = None
+        if self.hba1c_predictor:
+            try:
+                hba1c_result = self.hba1c_predictor.predict_with_interpretation(
+                    user_input, use_sensors=True
+                )
+            except Exception as e:
+                print(f"[!] HbA1c prediction failed: {e}")
+                hba1c_result = None
+
         # Get SHAP explanation
         explanation = None
         if self.explainer:
@@ -1255,7 +1313,7 @@ class DiabetesPredictor:
 
         # Generate report
         report = self.report_generator.generate_report(
-            probability, user_input, explanation
+            probability, user_input, explanation, hba1c_result
         )
 
         return report

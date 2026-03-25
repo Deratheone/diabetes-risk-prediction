@@ -32,19 +32,20 @@ The application will be available at: **http://localhost:5000**
 ```
 diabetes-risk-prediction/
 ├── app.py                    # Main Flask API server
-├── diabetes_predictor.py     # ML model training & prediction
+├── diabetes_predictor.py     # Main ML model (Risk Classification)
+├── hba1c_model.py            # HbA1c Estimation Model (Regression)
 ├── glucose_reader.py         # Hardware glucose sensor integration
-├── test_gemini.py           # Test Gemini API connection
-├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables (API keys)
-├── .env.example             # Template for environment variables
-├── dataset_cleaned.csv      # Training dataset
-├── frontend/                # Web interface
-│   └── index.html          # Single-page application
-├── hardware integration/    # Hardware device scripts
-│   └── sleep_lifestyle.py  # Sleep tracker integration
-├── models/                  # Saved ML models
-└── outputs/                 # Generated visualizations
+├── test_gemini.py            # Test Gemini API connection
+├── requirements.txt          # Python dependencies
+├── .env                      # Environment variables (API keys)
+├── dataset_cleaned.csv       # Training dataset for risk model
+├── sensor_data.csv           # Simulated/Logged sensor data
+├── frontend/                 # Web interface
+│   └── index.html            # Single-page application
+├── hardware integration/     # Hardware device scripts
+│   └── sleep_lifestyle.py    # Sleep tracker integration
+├── models/                   # Saved ML models (risk & hba1c)
+└── outputs/                  # Generated visualizations
 ```
 
 ## 🎯 Features
@@ -57,13 +58,23 @@ diabetes-risk-prediction/
   - Lifestyle factors (sugar intake)
   - Current medications
 
-- **Machine Learning Prediction**: Uses ensemble models trained on clinical data to predict diabetes risk
+- **Advanced ML Predictions**:
+  - **Diabetes Risk Score**: Classification model predicting probability of diabetes.
+  - **Estimated HbA1c**: Regression model estimating HbA1c levels based on risk profile and glucose.
+  - **Future Risk Projection**: Probabilistic forecasting of risk over 1, 3, 5, and 10 years.
 
-- **AI-Powered Recommendations**: Personalized suggestions using Google's Gemini API (optional)
+- **Interactive Visualizations**:
+  - Dynamic Gauge Chart for risk score.
+  - Color-coded risk levels.
+  - Visual breakdown of contributing risk factors.
 
-### Hardware Integration (Optional)
-- **Glucose Analyzer**: Urine glucose detection via Arduino RGB sensor
-- **Sleep Tracker**: Sleep hours and activity level monitoring from wearable devices
+- **AI-Powered Recommendations**: Personalized suggestions using Google's Gemini API (optional).
+
+### Hardware & Sensor Integration
+- **Real-time Sensor Data**: Integrates data from `sensor_data.csv` (simulated or logged) into predictions.
+- **Glucose Analyzer**: Support for Arduino-based urine glucose detection (RGB sensor).
+- **Sleep Tracker**: Support for wearable sleep and activity monitoring.
+
 
 ### Web Interface
 - Modern, responsive single-page application
@@ -105,18 +116,23 @@ This will verify:
 - Requires Arduino with accelerometer and heart rate sensor on COM5
 - See `hardware integration/sleep_lifestyle.py` for details
 
-## 📊 Machine Learning Model
+## 📊 Machine Learning Models
 
-The system uses multiple ML models:
-- Logistic Regression (baseline)
-- Random Forest
-- Gradient Boosting
-- HistGradient Boosting
+The system uses a dual-model approach:
 
-### Features Used:
-- **Clinical**: Glucose, Blood Pressure, Insulin, BMI, Age, Pregnancies
-- **Genetic**: Diabetes Pedigree Function (family history)
-- **Lifestyle**: Sleep hours, Activity level, Stress level, Sugar intake
+### 1. Risk Classification Model
+- **Type**: Ensemble Classifier (Random Forest + Gradient Boosting)
+- **Goal**: Predicts the binary probability of having diabetes.
+- **Key Features**: Glucose, BMI, Age, Pedigree Function, Blood Pressure.
+
+### 2. HbA1c Regression Model (`hba1c_model.py`)
+- **Type**: Random Forest Regressor
+- **Goal**: Estimates specific HbA1c percentage.
+- **Logic**: Combines self-reported data with sensor inputs. Includes a physiological reality check against fasting glucose levels to ensure medical accuracy.
+
+### Data Integration
+- **Sensor Fusion**: The system can blend manual inputs with data from `sensor_data.csv` (simulating IoT devices) to improve prediction accuracy.
+- **Smart Imputation**: Uses clinically-grounded formulas to estimate missing values (e.g., Insulin based on BMI/Glucose) when lab data is unavailable.
 
 ## 🔐 Environment Variables
 
@@ -137,11 +153,11 @@ See `.env.example` for template.
 ## 🛠️ Development
 
 ### File Purposes
-- **app.py**: Flask backend server handling API requests and predictions
-- **diabetes_predictor.py**: Complete ML pipeline with training, evaluation, and prediction
-- **glucose_reader.py**: Serial communication with Arduino glucose sensor
-- **test_gemini.py**: Utility to test Gemini API configuration
-- **frontend/index.html**: Complete web UI (single file with inline CSS/JS)
+- **app.py**: Flask backend server handling API requests, predictions, and sensor data integration.
+- **diabetes_predictor.py**: Main classification model pipeline.
+- **hba1c_model.py**: Dedicated regression model for HbA1c estimation.
+- **glucose_reader.py**: Serial communication with Arduino glucose sensor.
+- **frontend/index.html**: Complete web UI with dynamic risk visualizations.
 
 ### Adding New Features
 1. Backend changes go in `app.py`

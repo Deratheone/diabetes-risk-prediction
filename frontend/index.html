@@ -893,6 +893,25 @@ function renderResult(){
   if(recs.length===0) recs.push("Keep up the great work! Maintain a balanced diet and regular health checkups.");
   const renderRecs = recs.map((r,i)=>`<li style="margin-bottom:8px;display:flex;gap:8px;"><span style="color:var(--gn);font-weight:bold;">${i+1}.</span> <span style="flex:1">${r}</span></li>`).join("");
 
+  // --- HbA1c Prediction Section ---
+  let hba1cHtml = "";
+  if (state.risk && state.risk.hba1c) {
+    const h = state.risk.hba1c;
+    const val = h.hba1c_value ? parseFloat(h.hba1c_value).toFixed(1) : "N/A";
+    const color = h.color || (h.category === "Normal" ? "#4ade80" : h.category === "Prediabetes" ? "#facc15" : "#f87171");
+    
+    hba1cHtml = `<div class="fbox" style="background:${color}08;border-color:${color}25;margin-bottom:18px;">
+      <div class="ftitle" style="display:flex;justify-content:space-between;align-items:center;color:${color};">
+        <span>🩸 Estimated HbA1c</span>
+        <span style="background:${color}15;padding:2px 10px;border-radius:12px;font-size:14px;">${val}%</span>
+      </div>
+      <div style="font-size:13.5px;line-height:1.6;color:var(--tx);margin-top:8px;">
+        <div style="font-weight:600;margin-bottom:4px;color:${color}">${h.category || "Assessment"}</div>
+        ${h.interpretation || h.message || "No interpretation available."}
+      </div>
+    </div>`;
+  }
+
   // --- Future Risk Projection Section ---
   let futureRiskHtml = "";
   if (state.risk && state.risk.future_risk && state.risk.future_risk.projections) {
@@ -938,6 +957,7 @@ function renderResult(){
       </div>
     </div>
   </div>
+  ${hba1cHtml}
   ${futureRiskHtml}
   <div class="fbox">
     <div class="ftitle">⚡ Detected Risk Factors</div>
@@ -1041,7 +1061,7 @@ function render(dir){
     card.innerHTML=renderResult();
     setTimeout(()=>{
       const gp=document.getElementById("gPath");
-      if(gp)gp.style.strokeDashoffset=283-(283*state.risk.pct/100);
+      if(gp)gp.style.strokeDashoffset=267-(267*state.risk.pct/100);
       const rf=document.getElementById("rlcf");
       if(rf)rf.style.width=state.risk.pct+"%";
     },120);
@@ -1417,6 +1437,7 @@ function attach(){
           recommendations:data.recommendations,
           futureRisk:data.future_risk,
           future_risk:data.future_risk, // Add snake_case for frontend compatibility
+          hba1c:data.hba1c_prediction, // Store HbA1c prediction
           inputAnalysis:data.input_analysis
         };
         state.predicted=true;

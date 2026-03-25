@@ -240,11 +240,20 @@ def map_frontend_to_model(data: dict) -> dict:
     sugar_map = {'Low': 0, 'Moderate': 1, 'High': 2}
     sugar_intake = sugar_map.get(data.get('sugar', 'Moderate'), 1)
 
-    # Estimate glucose based on risk factors (since not collected in form)
-    # This is a rough estimate - in production, this should be actual lab values
-    glucose = estimate_glucose(age, bmi, sugar_intake, pedigree, data.get('medicines', []))
+    # Use provided glucose or estimate it
+    provided_glucose = data.get('glucose')
+    if provided_glucose and str(provided_glucose).strip():
+        try:
+            glucose = float(provided_glucose)
+        except ValueError:
+             # Fallback to estimate if invalid
+             glucose = estimate_glucose(age, bmi, sugar_intake, pedigree, data.get('medicines', []))
+    else:
+        glucose = estimate_glucose(age, bmi, sugar_intake, pedigree, data.get('medicines', []))
 
     # Estimate insulin (HOMA-IR based approximation)
+    # Using HOMA-IR concept: (Glucose * Insulin) / 405
+    # Normal HOMA-IR is < 2.5
     insulin = estimate_insulin(glucose, bmi)
 
     # Activity level (not in form, use default)
@@ -334,20 +343,21 @@ def estimate_glucose(age: float, bmi: float, sugar: int, pedigree: float, medici
 
 def estimate_insulin(glucose: float, bmi: float) -> float:
     """Estimate insulin based on glucose and BMI (HOMA-IR approximation)."""
-    # Higher BMI and glucose typically mean higher insulin (insulin resistance)
-    base = 50
+    # Base fasting insulin (uU/mL) - Normal range 2.6-24.9
+    base = 10 
 
     if glucose > 126:
-        base += 40
+        base += 15
     elif glucose > 100:
-        base += 20
+        base += 8
 
     if bmi > 30:
-        base += 30
-    elif bmi > 25:
         base += 15
+    elif bmi > 25:
+        base += 8
 
-    return round(min(300, max(20, base)), 0)
+    # Cap at reasonable max for estimation
+    return round(min(60, max(5, base)), 0)
 
 
 def generate_clinical_summary(risk_data: dict, input_data: dict) -> dict:
@@ -533,6 +543,7 @@ def predict():
             'risk_factors': clinical_summary['risk_factors'],
             'recommendations': clinical_summary['recommendations'],
             'future_risk': report.get('future_risk', {}),  # Use ML model's detailed future risk
+            'hba1c_prediction': report.get('hba1c_prediction'),  # Include HbA1c prediction
             'input_analysis': {
                 'bmi': model_input['BMI'],
                 'glucose_estimate': model_input.get('_estimated_glucose', model_input['Glucose']),
