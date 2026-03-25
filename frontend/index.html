@@ -233,6 +233,53 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .breset{width:100%;background:transparent;color:var(--mu);border:1px solid var(--br);padding:13px 28px;border-radius:50px;font-size:14px;font-weight:500;font-family:var(--fd);cursor:pointer;transition:var(--tr);display:flex;align-items:center;justify-content:center;gap:8px}
 .breset:hover{border-color:var(--brg);color:var(--tx)}
 
+/* Loading spinner for risk reduction */
+.loading-spinner{width:24px;height:24px;border:2px solid var(--br);border-top:2px solid var(--ac);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+/* hardware */
+.hwbtn{width:100%;background:rgba(56,189,248,.08);border:1.5px solid rgba(56,189,248,.24);border-radius:var(--r);padding:18px 20px;margin-bottom:12px;cursor:pointer;transition:var(--tr);text-align:left;display:flex;align-items:center;gap:16px}
+.hwbtn:hover{border-color:rgba(56,189,248,.4);background:rgba(56,189,248,.12)}
+.hwbtn-icon{font-size:28px}
+.hwbtn-content{flex:1}
+.hwbtn-title{font-weight:600;color:var(--tx);font-family:var(--fd);margin-bottom:2px}
+.hwbtn-desc{font-size:12px;color:var(--mu)}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .3s}
+.modal-overlay.show{opacity:1;pointer-events:all}
+.modal-content{background:var(--sf);border:1px solid var(--br);border-radius:24px;padding:36px 40px;max-width:500px;width:90vw;box-shadow:0 32px 72px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.025) inset;max-height:80vh;overflow-y:auto;animation:slideUp .3s cubic-bezier(.4,0,.2,1)}
+@keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.modal-header{display:flex;align-items:center;gap:14px;margin-bottom:28px;padding-bottom:18px;border-bottom:1px solid var(--br)}
+.modal-icon{font-size:32px}
+.modal-title{font-family:var(--fd);font-size:20px;font-weight:700;color:var(--tx)}
+.modal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.modal-opt{background:var(--sf2);border:1.5px solid var(--br);border-radius:var(--r);padding:20px;cursor:pointer;transition:var(--tr);text-align:center}
+.modal-opt:hover{border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.05);transform:translateY(-2px)}
+.modal-opt-icon{font-size:36px;margin-bottom:12px}
+.modal-opt-title{font-weight:600;color:var(--tx);font-family:var(--fd);margin-bottom:6px;font-size:13px}
+.modal-opt-desc{font-size:11px;color:var(--mu);line-height:1.4}
+.hardware-reader{background:var(--sf2);border:1px solid var(--br);border-radius:var(--r);padding:24px;margin-bottom:20px;text-align:center}
+.reader-loading{display:flex;flex-direction:column;align-items:center;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid rgba(56,189,248,.2);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.reader-status{font-size:14px;color:var(--tx);font-weight:500}
+.reader-success{display:flex;flex-direction:column;gap:14px}
+.reader-value{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.2);border-radius:var(--rs);padding:14px;text-align:left;margin-bottom:6px}
+.reader-value-label{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.reader-value-data{font-size:18px;font-weight:600;color:var(--ac);font-family:var(--fd)}
+.reader-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2);border-radius:var(--rs);padding:16px;color:var(--re);text-align:center;margin-bottom:18px}
+.hw-info{background:rgba(124,142,248,.05);border:1px solid rgba(124,142,248,.14);border-radius:var(--rs);padding:12px 14px;font-size:12px;color:var(--mu);margin-bottom:14px;display:flex;gap:8px}
+.hw-info span{flex-shrink:0}
+.confidence-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--fd)}
+.conf-high{background:rgba(74,222,128,.2);color:#4ade80}
+.conf-medium{background:rgba(250,204,21,.2);color:#facc15}
+.conf-low{background:rgba(248,113,113,.2);color:#f87171}
+.modal-buttons{display:flex;gap:10px;flex-direction:column}
+.modal-btn{padding:12px 20px;border-radius:50px;font-size:14px;font-weight:600;font-family:var(--fd);border:none;cursor:pointer;transition:var(--tr);flex:1;min-height:44px}
+.modal-btn-primary{background:linear-gradient(135deg,#38bdf8,#7c8ef8);color:#fff;box-shadow:0 8px 22px rgba(56,189,248,.22)}
+.modal-btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(56,189,248,.32)}
+.modal-btn-secondary{background:transparent;color:var(--mu);border:1px solid var(--br)}
+.modal-btn-secondary:hover{border-color:var(--brg);color:var(--tx)}
+
 @media(max-width:640px){
   .app-header,.hdr-inner{padding:14px 18px}
   .main{padding:28px 14px 70px}
@@ -281,11 +328,12 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 // ── Data ──
 const STEPS=[
   {id:1,label:"Basic Details",icon:"👤"},
-  {id:2,label:"Clinical",icon:"🧪"},
-  {id:3,label:"Family History",icon:"👨‍👩‍👧"},
-  {id:4,label:"Lifestyle",icon:"🍬"},
-  {id:5,label:"Medicines",icon:"💊"},
-  {id:6,label:"Summary",icon:"📋"}
+  {id:2,label:"Hardware Integration",icon:"⚙️"},
+  {id:3,label:"Clinical",icon:"🧪"},
+  {id:4,label:"Family History",icon:"👨‍👩‍👧"},
+  {id:5,label:"Lifestyle",icon:"🍬"},
+  {id:6,label:"Medicines",icon:"💊"},
+  {id:7,label:"Summary",icon:"📋"}
 ];
 const RELS=[
   {id:"father",label:"Father",score:.5,icon:"👨"},
@@ -317,7 +365,18 @@ let state={
   age:"",weight:"",height:"",waist:"",
   pregnancies:"",bp:"",glucose:"",
   relatives:[],othersClose:null,
-  sugar:"",medicines:[]
+  sugar:"",medicines:[],
+  hardware_glucose:null,hardware_glucose_confidence:"unknown",
+  hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
+  hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
+  show_hardware_modal:false,hardware_reading_glucose:false,
+  hardware_reading_sleep:false,hardware_current_view:null,
+  hardware_error:null,
+  // Risk reduction feature
+  show_risk_reduction:false,
+  risk_suggestions:null,
+  loading_suggestions:false,
+  suggestions_error:null
 };
 
 // ── Calculations ──
@@ -381,8 +440,11 @@ function validate(){
     if(!state.height)e.height="Required";
     if(!state.waist)e.waist="Required";
   }
-  if(state.step===2&&!state.bp)e.bp="Required";
-  if(state.step===4&&!state.sugar)e.sugar="Please select a level";
+  // Step 2 is Hardware Integration (optional, no validation needed)
+  if(state.step===3&&!state.bp)e.bp="Required";  // Step 3: Clinical Inputs
+  // Step 4 is Family History (optional, no validation needed)
+  if(state.step===5&&!state.sugar)e.sugar="Please select a level";  // Step 5: Lifestyle
+  // Step 6 is Medications (optional, no validation needed)
   return e;
 }
 
@@ -459,7 +521,198 @@ function renderStep1(){
   </div>`:"");
 }
 
+function renderHardwareModal(){
+  if(!state.show_hardware_modal)return"";
+  return`<div class="modal-overlay show">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-icon">⚙️</span>
+        <span class="modal-title">Hardware Integration</span>
+      </div>
+      <div class="modal-options">
+        <div class="modal-opt" data-hw="glucose">
+          <div class="modal-opt-icon">🧪</div>
+          <div class="modal-opt-title">Urine Glucose Detection</div>
+          <div class="modal-opt-desc">Analyze urine sample for glucose levels using hardware analyzer</div>
+        </div>
+        <div class="modal-opt" data-hw="sleep">
+          <div class="modal-opt-icon">📊</div>
+          <div class="modal-opt-title">Sleep & Activity Tracking</div>
+          <div class="modal-opt-desc">Read sleep hours and activity level from connected wearable</div>
+        </div>
+      </div>
+      <button class="modal-btn modal-btn-secondary" id="hardwareBackBtn">← Back to Integration Step</button>
+    </div>
+  </div>`;
+}
+
+function renderGlucoseReader(){
+  if(state.hardware_reading_glucose){
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-loading">
+        <div class="spinner"></div>
+        <div class="reader-status">Detecting glucose analyzer on COM5...</div>
+        <div style="font-size:12px;color:var(--mu);margin-top:8px">Reading RGB sensor data from Arduino...</div>
+      </div>
+    </div>`;
+  }
+  if(state.hardware_error){
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-error" style="text-align:center;padding:20px">
+        <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+        <div class="reader-value-label">Connection Error</div>
+        <div style="font-size:13px;color:var(--mu);margin-top:8px">${state.hardware_error}</div>
+        <div style="display:flex;gap:8px;flex-direction:column;margin-top:16px">
+          <button class="modal-btn modal-btn-secondary" id="retryGlucoseBtn">🔄 Try Again</button>
+          <button class="modal-btn modal-btn-secondary" id="skipGlucoseBtn">Skip This Step</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if(state.hardware_glucose!==null){
+    const confidence=state.hardware_glucose_confidence||"unknown";
+    let confClass="conf-low";
+    if(confidence==="high")confClass="conf-high";
+    else if(confidence==="medium")confClass="conf-medium";
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-success">
+        ${state.hardware_glucose_rgb?`<div class="reader-value">
+          <div class="reader-value-label">RGB Detection</div>
+          <div class="reader-value-data">${state.hardware_glucose_rgb}</div>
+        </div>`:""}
+        <div class="reader-value">
+          <div class="reader-value-label">Glucose Level</div>
+          <div class="reader-value-data">${state.hardware_glucose_level||state.hardware_glucose+" mg/dL"}</div>
+        </div>
+        ${state.hardware_glucose_distance?`<div class="reader-value">
+          <div class="reader-value-label">Match Distance</div>
+          <div class="reader-value-data">${state.hardware_glucose_distance}</div>
+        </div>`:""}
+        <div style="text-align:center;padding:8px 0">
+          <span class="confidence-badge ${confClass}">Confidence: ${confidence}</span>
+        </div>
+        <div class="hw-info">
+          <span>ℹ️</span>
+          <span>This reading will be a major factor in your risk assessment</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-direction:column">
+          <button class="modal-btn modal-btn-primary" id="useGlucoseBtn">✓ Use This Reading</button>
+          <button class="modal-btn modal-btn-secondary" id="retryGlucoseBtn">🔄 Try Again</button>
+          <button class="modal-btn modal-btn-secondary" id="skipGlucoseBtn">Skip This Step</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return`<div class="hardware-reader anim-in">
+    <div class="reader-loading">
+      <div class="spinner" style="margin-bottom:12px"></div>
+      <div class="reader-status">Ready to detect glucose analyzer on COM5...</div>
+      <div style="font-size:12px;color:var(--mu);margin-top:8px">Ensure the Arduino glucose analyzer is connected and the strip is in place</div>
+      <button class="modal-btn modal-btn-primary" id="startGlucoseBtn" style="margin-top:16px;max-width:200px">Start Detection</button>
+      <button class="modal-btn modal-btn-secondary" id="backGlucoseInitBtn" style="margin-top:8px;max-width:200px">← Back</button>
+    </div>
+  </div>`;
+}
+
+function renderSleepReader(){
+  if(state.hardware_reading_sleep){
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-loading">
+        <div class="spinner"></div>
+        <div class="reader-status">Reading sleep activity data from COM5...</div>
+        <div style="font-size:12px;color:var(--mu);margin-top:8px">This may take 15-30 seconds...</div>
+      </div>
+    </div>`;
+  }
+  if(state.hardware_error){
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-error" style="text-align:center;padding:20px">
+        <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+        <div class="reader-value-label">Connection Error</div>
+        <div style="font-size:13px;color:var(--mu);margin-top:8px">${state.hardware_error}</div>
+        <div style="display:flex;gap:8px;flex-direction:column;margin-top:16px">
+          <button class="modal-btn modal-btn-secondary" id="retrySleepBtn">🔄 Try Again</button>
+          <button class="modal-btn modal-btn-secondary" id="backSleepBtn">← Back</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if(state.hardware_sleep_hours!==null){
+    return`<div class="hardware-reader anim-in">
+      <div class="reader-success">
+        <div class="reader-value">
+          <div class="reader-value-label">Sleep Hours</div>
+          <div class="reader-value-data">${state.hardware_sleep_hours} hrs</div>
+        </div>
+        <div class="reader-value">
+          <div class="reader-value-label">Activity Level</div>
+          <div class="reader-value-data">${state.hardware_activity_label||state.hardware_activity_level||"Moderate"}</div>
+        </div>
+        <div class="hw-info">
+          <span>ℹ️</span>
+          <span>Demo data - requires prolonged monitoring for accuracy. This is for demonstration purposes only.</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-direction:column">
+          <button class="modal-btn modal-btn-primary" id="doneSleepBtn">✓ Done</button>
+          <button class="modal-btn modal-btn-secondary" id="backSleepBtn">← Back</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return`<div class="hardware-reader anim-in">
+    <div class="reader-loading">
+      <div class="spinner" style="margin-bottom:12px"></div>
+      <div class="reader-status">Ready to read sleep activity data...</div>
+      <div style="font-size:12px;color:var(--mu);margin-top:8px">Ensure the Arduino sleep tracker is connected and sensors are ready</div>
+      <button class="modal-btn modal-btn-primary" id="startSleepBtn" style="margin-top:16px;max-width:200px">Start Reading</button>
+      <button class="modal-btn modal-btn-secondary" id="backSleepInitBtn" style="margin-top:8px;max-width:200px">← Back</button>
+    </div>
+  </div>`;
+}
+
 function renderStep2(){
+  // If viewing glucose reader
+  if(state.hardware_current_view==="glucose"){
+    return sth("🧪","Glucose Detection","Analyzing urine glucose levels")+
+    `<div style="margin-bottom:20px">
+      ${renderGlucoseReader()}
+    </div>`;
+  }
+  // If viewing sleep reader
+  if(state.hardware_current_view==="sleep"){
+    return sth("📊","Sleep & Activity","Reading sleep and activity data")+
+    `<div style="margin-bottom:20px">
+      ${renderSleepReader()}
+    </div>`;
+  }
+  // Default hardware integration screen
+  return sth("⚙️","Hardware Integration","Optional: Connect devices to enhance accuracy")+
+  `<div style="margin-bottom:20px">
+    ${renderHardwareModal()}
+    <button class="hwbtn" id="glucoseBtn">
+      <span class="hwbtn-icon">🧪</span>
+      <div class="hwbtn-content">
+        <div class="hwbtn-title">Connect Glucose Analyzer</div>
+        <div class="hwbtn-desc">Urine glucose detection from lab equipment</div>
+      </div>
+      ${state.hardware_glucose!==null?`<div style="color:var(--gn);font-size:20px;margin-left:auto">✓</div>`:""}
+    </button>
+    <button class="hwbtn" id="sleepBtn">
+      <span class="hwbtn-icon">📊</span>
+      <div class="hwbtn-content">
+        <div class="hwbtn-title">Connect Activity Tracker</div>
+        <div class="hwbtn-desc">Sleep hours and movement data from wearable</div>
+      </div>
+      ${state.hardware_sleep_hours!==null?`<div style="color:var(--gn);font-size:20px;margin-left:auto">✓</div>`:""}
+    </button>
+    ${state.hardware_glucose!==null||state.hardware_sleep_hours!==null?`<div class="hw-info">
+      <span>✓</span>
+      <span>Hardware data connected: ${[state.hardware_glucose!==null&&"Glucose analyzer",state.hardware_sleep_hours!==null&&"Activity tracker"].filter(Boolean).join(", ")}</span>
+    </div>`:""}
+  </div>`;
+}
+
+function renderOldStep2(){
   const female=isFemale();
   const g=parseFloat(state.glucose),gc=glucoseCat(g);
   const gpct=g?Math.min(Math.max(((g-60)/200)*100,0),100):0;
@@ -493,70 +746,78 @@ function renderStep2(){
   `<div class="ibox"><span>ℹ️</span><p>Use values from your most recent lab report or medical checkup for the most accurate prediction.</p></div>`;
 }
 
-function renderStep3(){
+function renderOldStep3(){
   const p=pedigree();
   const selRels=RELS.filter(r=>state.relatives.includes(r.id));
   const othSel=state.relatives.includes("others");
   return sth("👨‍👩‍👧","Family History","Select relatives who have or had diabetes")+
   `<div class="rel-grid">
-    ${RELS.map(r=>`<div class="rcard${state.relatives.includes(r.id)?" sel":""}" data-rel="${r.id}">
-      <span class="rico">${r.icon}</span>
-      <span class="rnm">${r.label}</span>
-      ${r.score!==null?`<span class="rsc">+${r.score}</span>`:""}
-      <div class="rchk">${state.relatives.includes(r.id)?"✓":""}</div>
-    </div>`).join("")}
-  </div>`+
-  (othSel?`<div class="opanel anim-in">
-    <div class="oq"><span>❓</span><span>Is this a <strong>close relative</strong>?</span></div>
-    <div class="obtns">
-      <button class="obtn${state.othersClose==="yes"?" sel":""}" data-oc="yes">👍 Yes — Close Relative <span class="stag">+0.2</span></button>
-      <button class="obtn${state.othersClose==="no"?" sel":""}" data-oc="no">👎 No — Distant Relative <span class="stag">+0.1</span></button>
-    </div>
-  </div>`:"")+
-  `<div class="pdisp">
-    <div class="pleft">
-      <span class="plbl">Diabetes Pedigree Score</span>
-      <div class="pchips">
-        ${selRels.length===0?`<span class="pnone">No relatives selected</span>`:selRels.map(r=>{
-          const sc=r.id==="others"?(state.othersClose==="yes"?.2:state.othersClose==="no"?.1:"?"):r.score;
-          return`<span class="pchip">${r.icon} ${r.label}: <b>+${sc}</b></span>`;
-        }).join("")}
-      </div>
-    </div>
-    <div class="pright">
-      <span class="pval">${p.toFixed(2)}</span>
-      <span class="punit">score</span>
-    </div>
-  </div>`;
+     ${RELS.map(r=>`<div class="rcard${state.relatives.includes(r.id)?" sel":""}" data-rel="${r.id}">
+       <span class="rico">${r.icon}</span>
+       <span class="rnm">${r.label}</span>
+       ${r.score!==null?`<span class="rsc">+${r.score}</span>`:""}
+       <div class="rchk">${state.relatives.includes(r.id)?"✓":""}</div>
+     </div>`).join("")}
+   </div>`+
+   (othSel?`<div class="opanel anim-in">
+     <div class="oq"><span>❓</span><span>Is this a <strong>close relative</strong>?</span></div>
+     <div class="obtns">
+       <button class="obtn${state.othersClose==="yes"?" sel":""}" data-oc="yes">👍 Yes — Close Relative <span class="stag">+0.2</span></button>
+       <button class="obtn${state.othersClose==="no"?" sel":""}" data-oc="no">👎 No — Distant Relative <span class="stag">+0.1</span></button>
+     </div>
+   </div>`:"")+
+   `<div class="pdisp">
+     <div class="pleft">
+       <span class="plbl">Diabetes Pedigree Score</span>
+       <div class="pchips">
+         ${selRels.length===0?`<span class="pnone">No relatives selected</span>`:selRels.map(r=>{
+           const sc=r.id==="others"?(state.othersClose==="yes"?.2:state.othersClose==="no"?.1:"?"):r.score;
+           return`<span class="pchip">${r.icon} ${r.label}: <b>+${sc}</b></span>`;
+         }).join("")}
+       </div>
+     </div>
+     <div class="pright">
+       <span class="pval">${p.toFixed(2)}</span>
+       <span class="punit">score</span>
+     </div>
+   </div>`;
+}
+
+function renderStep3(){
+  return sth("🧪","Clinical Inputs","Recent medical measurements")+renderOldStep2()+``;
 }
 
 function renderStep4(){
-  return sth("🍬","Lifestyle","Describe your typical sugar and carbohydrate consumption")+
-  (state.errors.sugar?`<p class="etop">${state.errors.sugar}</p>`:"")+
-  `<div class="sgrid">
-    ${SUGAR.map(o=>`<button class="scard${state.sugar===o.v?" sel":""}" data-sugar="${o.v}">
-      <span class="semi">${o.icon}</span>
-      <span class="svl">${o.v}</span>
-      <span class="sds">${o.d}</span>
-      ${state.sugar===o.v?`<span class="stck">✓</span>`:""}
-    </button>`).join("")}
-  </div>`;
+  return renderOldStep3();
 }
 
 function renderStep5(){
+  return sth("🍬","Lifestyle","Describe your typical sugar and carbohydrate consumption")+
+  (state.errors.sugar?`<p class="etop">${state.errors.sugar}</p>`:"")+
+  `<div class="sgrid">
+     ${SUGAR.map(o=>`<button class="scard${state.sugar===o.v?" sel":""}" data-sugar="${o.v}">
+       <span class="semi">${o.icon}</span>
+       <span class="svl">${o.v}</span>
+       <span class="sds">${o.d}</span>
+       ${state.sugar===o.v?`<span class="stck">✓</span>`:""}
+     </button>`).join("")}
+   </div>`;
+}
+
+function renderStep6(){
   return sth("💊","Current Medications","Select all medicines you are currently taking")+
   `<div class="wbox"><span style="font-size:22px;margin-top:1px">⚠️</span>
-    <div><strong>Medical Notice</strong>
-    <p>Some medicines can increase blood sugar and may affect urine glucose results. Please disclose all current medications for accurate risk assessment.</p></div>
-  </div>
-  <div class="mlist">
-    ${MEDS.map(m=>`<div class="mrow${state.medicines.includes(m.id)?" ck":""}" data-med="${m.id}">
-      <span class="mico">${m.icon}</span>
-      <div class="minfo"><span class="mnm">${m.label}</span><span class="msb">${m.sub}</span></div>
-      <div class="mtck">${state.medicines.includes(m.id)?"✓":""}</div>
-    </div>`).join("")}
-  </div>
-  ${state.medicines.length===0?`<p class="nnote">✓ No medications selected</p>`:""}`;
+     <div><strong>Medical Notice</strong>
+     <p>Some medicines can increase blood sugar and may affect urine glucose results. Please disclose all current medications for accurate risk assessment.</p></div>
+   </div>
+   <div class="mlist">
+     ${MEDS.map(m=>`<div class="mrow${state.medicines.includes(m.id)?" ck":""}" data-med="${m.id}">
+       <span class="mico">${m.icon}</span>
+       <div class="minfo"><span class="mnm">${m.label}</span><span class="msb">${m.sub}</span></div>
+       <div class="mtck">${state.medicines.includes(m.id)?"✓":""}</div>
+     </div>`).join("")}
+   </div>
+   ${state.medicines.length===0?`<p class="nnote">✓ No medications selected</p>`:""}`;
 }
 
 function renderSummary(){
@@ -596,6 +857,11 @@ function renderSummary(){
       <div class="sstitle">💊 Medications</div>
       ${sm.length===0?`<p class="snone">No medications selected</p>`:sm.map(m=>row(`${m.icon} ${m.label}`,"Taking")).join("")}
     </div>
+    ${state.hardware_glucose!==null||state.hardware_sleep_hours!==null?`<div class="ssec wide">
+      <div class="sstitle">⚙️ Hardware Integration</div>
+      ${state.hardware_glucose!==null?row("Glucose Source",`<span class="chi">Hardware Analyzer (${state.hardware_glucose} mg/dL)</span>`):""}
+      ${state.hardware_sleep_hours!==null?row("Sleep Hours",`<span class="chi">${state.hardware_sleep_hours} hrs</span>`):""}
+    </div>`:""}
   </div>
   <button class="bpredict" id="predictBtn"><span>🔬</span> Generate Risk Prediction</button>`;
 }
@@ -666,14 +932,78 @@ function renderResult(){
     </ul>
   </div>
   <div class="disc"><span>🛡️</span><p>This tool provides a <b>screening estimate only</b> and is not a medical diagnosis. Always consult a qualified healthcare professional for clinical evaluation and personalised advice.</p></div>
+
+  <!-- Risk Reduction Suggestions Section -->
+  <div class="risk-reduction-section" style="margin-top:24px;">
+    ${!state.show_risk_reduction ? `
+      <div style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);border-radius:var(--r);padding:20px;text-align:center;">
+        <div style="font-size:16px;font-weight:600;color:var(--ac);margin-bottom:8px;">🎯 Want personalized recommendations?</div>
+        <div style="font-size:14px;color:var(--mu);margin-bottom:16px;line-height:1.4;">
+          Get AI-powered, personalized suggestions to reduce your diabetes risk based on your unique health profile.
+        </div>
+        <button class="bnext" id="showRiskReductionBtn" style="background:var(--ac);padding:10px 20px;">
+          <span>✨</span> Yes, Show Me How to Reduce My Risk
+        </button>
+      </div>
+    ` : `
+      <div style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);border-radius:var(--r);padding:20px;">
+        <div style="font-size:16px;font-weight:600;color:var(--ac);margin-bottom:16px;">🎯 Personalized Risk Reduction</div>
+
+        ${!state.risk_suggestions && !state.loading_suggestions ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:14px;color:var(--mu);margin-bottom:16px;text-align:left;">
+              Get AI-powered personalized suggestions to reduce your diabetes risk based on your health data.
+            </div>
+            <div style="display:flex;gap:12px;">
+              <button class="bnext" id="getSuggestionsBtn" style="background:var(--gn);flex:1;">
+                <span>🤖</span> Get AI Suggestions
+              </button>
+              <button class="bback" id="hideRiskReductionBtn" style="flex:0 0 auto;">Cancel</button>
+            </div>
+          </div>
+        ` : ''}
+
+        ${state.loading_suggestions ? `
+          <div style="text-align:center;padding:20px;">
+            <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+            <div style="color:var(--mu);font-size:14px;">Generating personalized suggestions...</div>
+          </div>
+        ` : ''}
+
+        ${state.suggestions_error ? `
+          <div style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:16px;margin-bottom:16px;">
+            <div style="color:#f87171;font-weight:600;margin-bottom:8px;">❌ Error Getting Suggestions</div>
+            <div style="color:var(--mu);font-size:13px;margin-bottom:12px;">${state.suggestions_error}</div>
+            <button class="bnext" id="retrySuggestionsBtn" style="background:var(--ac);padding:8px 16px;font-size:13px;">
+              Try Again
+            </button>
+          </div>
+        ` : ''}
+
+        ${state.risk_suggestions ? `
+          <div style="background:rgba(74,222,128,.05);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:20px;">
+            <div style="color:var(--gn);font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+              <span>🤖</span> AI-Powered Recommendations for You
+            </div>
+            <div style="color:var(--tx);font-size:14px;line-height:1.6;white-space:pre-wrap;">${state.risk_suggestions}</div>
+            <div style="margin-top:16px;display:flex;gap:12px;">
+              <button class="bback" id="newSuggestionsBtn" style="flex:0 0 auto;">Get New Suggestions</button>
+              <button class="bback" id="hideSuggestionsBtn" style="flex:0 0 auto;">Hide</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `}
+  </div>
+
   <button class="breset" id="resetBtn">↺ Start New Assessment</button>`;
 }
 
 function renderNav(){
-  if(state.step>=6)return"";
+  if(state.step>=7)return"";
   return`<div class="nav-row">
     ${state.step>1?`<button class="bback" id="backBtn">← Back</button>`:""}
-    <button class="bnext" id="nextBtn">${state.step===5?"Review Summary →":"Continue →"}</button>
+    <button class="bnext" id="nextBtn">${state.step===6?"Review Summary →":"Continue →"}</button>
   </div>`;
 }
 
@@ -687,7 +1017,8 @@ function render(dir){
     else if(state.step===3)card.innerHTML=renderStep3()+renderNav();
     else if(state.step===4)card.innerHTML=renderStep4()+renderNav();
     else if(state.step===5)card.innerHTML=renderStep5()+renderNav();
-    else if(state.step===6)card.innerHTML=renderSummary();
+    else if(state.step===6)card.innerHTML=renderStep6()+renderNav();
+    else if(state.step===7)card.innerHTML=renderSummary();
   } else {
     card.innerHTML=renderResult();
     setTimeout(()=>{
@@ -835,6 +1166,134 @@ function attach(){
       render();
     });
   });
+  // Hardware Integration
+  const glucoseBtn=document.getElementById("glucoseBtn");
+  if(glucoseBtn)glucoseBtn.addEventListener("click",()=>{
+    state.hardware_current_view="glucose";
+    state.hardware_error=null;
+    render();
+  });
+  const sleepBtn=document.getElementById("sleepBtn");
+  if(sleepBtn)sleepBtn.addEventListener("click",()=>{
+    state.hardware_current_view="sleep";
+    state.hardware_error=null;
+    render();
+  });
+  // Modal hardware options (deprecated - now using direct views)
+  document.querySelectorAll("[data-hw]").forEach(el=>{
+    el.addEventListener("click",()=>{
+      const type=el.dataset.hw;
+      state.show_hardware_modal=false;
+      state.hardware_current_view=type;
+      state.hardware_error=null;
+      render();
+    });
+  });
+  // Glucose start button
+  const startGlucoseBtn=document.getElementById("startGlucoseBtn");
+  if(startGlucoseBtn)startGlucoseBtn.addEventListener("click",async()=>{
+    state.hardware_reading_glucose=true;
+    state.hardware_error=null;
+    render();
+    try{
+      const resp=await fetch("/api/read-hardware/glucose",{method:"POST"});
+      const data=await resp.json();
+      if(data.success){
+        state.hardware_glucose=data.glucose_value||0;
+        state.hardware_glucose_confidence=data.confidence||"unknown";
+        state.hardware_glucose_level=data.glucose_level||"";
+        state.hardware_glucose_rgb=data.is_no_strip?"":`R:${data.serial_output?data.serial_output.find(l=>l.includes("Avg Normalised"))?.split(":")[1]||"N/A":"N/A"}`;
+        state.hardware_glucose_distance=data.match_distance?`${data.match_distance.toFixed(2)} ${data.match_distance>20?"(Low match)":"(Good match)"}`.trim():"";
+      }else{
+        state.hardware_error=data.message||data.error||"Failed to read glucose analyzer";
+      }
+    }catch(err){
+      state.hardware_error="Connection error: "+err.message;
+      console.error(err);
+    }
+    state.hardware_reading_glucose=false;
+    render();
+  });
+  // Sleep start button
+  const startSleepBtn=document.getElementById("startSleepBtn");
+  if(startSleepBtn)startSleepBtn.addEventListener("click",async()=>{
+    state.hardware_reading_sleep=true;
+    state.hardware_error=null;
+    render();
+    try{
+      const resp=await fetch("/api/read-hardware/sleep",{method:"POST"});
+      const data=await resp.json();
+      if(data.success){
+        state.hardware_sleep_hours=data.sleep_hours||0;
+        state.hardware_activity_level=data.activity_level||0;
+        state.hardware_activity_label=data.activity_label||"Unknown";
+      }else{
+        state.hardware_error=data.message||data.error||"Failed to read sleep tracker";
+      }
+    }catch(err){
+      state.hardware_error="Connection error: "+err.message;
+      console.error(err);
+    }
+    state.hardware_reading_sleep=false;
+    render();
+  });
+  // Glucose reader buttons
+  const useGlucoseBtn=document.getElementById("useGlucoseBtn");
+  if(useGlucoseBtn)useGlucoseBtn.addEventListener("click",()=>{
+    state.hardware_current_view=null;
+    state.animDir="fwd";
+    state.step++;
+    renderProg();
+    render("fwd");
+  });
+  const retryGlucoseBtn=document.getElementById("retryGlucoseBtn");
+  if(retryGlucoseBtn)retryGlucoseBtn.addEventListener("click",()=>{
+    state.hardware_glucose=null;
+    state.hardware_glucose_confidence="unknown";
+    state.hardware_error=null;
+    render();
+  });
+  const skipGlucoseBtn=document.getElementById("skipGlucoseBtn");
+  if(skipGlucoseBtn)skipGlucoseBtn.addEventListener("click",()=>{
+    state.hardware_glucose=null;
+    state.hardware_current_view=null;
+    state.hardware_error=null;
+    render();
+  });
+  const backGlucoseInitBtn=document.getElementById("backGlucoseInitBtn");
+  if(backGlucoseInitBtn)backGlucoseInitBtn.addEventListener("click",()=>{
+    state.hardware_current_view=null;
+    render();
+  });
+  // Sleep reader buttons
+  const doneSleepBtn=document.getElementById("doneSleepBtn");
+  if(doneSleepBtn)doneSleepBtn.addEventListener("click",()=>{
+    state.hardware_current_view=null;
+    render();
+  });
+  const backSleepBtn=document.getElementById("backSleepBtn");
+  if(backSleepBtn)backSleepBtn.addEventListener("click",()=>{
+    state.hardware_sleep_hours=null;
+    state.hardware_activity_level=null;
+    state.hardware_current_view=null;
+    state.hardware_error=null;
+    render();
+  });
+  const retrySleepBtn=document.getElementById("retrySleepBtn");
+  if(retrySleepBtn)retrySleepBtn.addEventListener("click",()=>{
+    state.hardware_sleep_hours=null;
+    state.hardware_activity_level=null;
+    state.hardware_error=null;
+    render();
+  });
+  const backSleepInitBtn=document.getElementById("backSleepInitBtn");
+  if(backSleepInitBtn)backSleepInitBtn.addEventListener("click",()=>{
+    state.hardware_current_view=null;
+    render();
+  });
+  // Hardware modal back
+  const hardwareBackBtn=document.getElementById("hardwareBackBtn");
+  if(hardwareBackBtn)hardwareBackBtn.addEventListener("click",()=>{state.show_hardware_modal=false;render();});
   // Next
   const nextBtn=document.getElementById("nextBtn");
   if(nextBtn)nextBtn.addEventListener("click",()=>{
@@ -847,11 +1306,212 @@ function attach(){
   if(backBtn)backBtn.addEventListener("click",()=>{state.animDir="bck";state.step--;renderProg();render("bck");});
   // Predict
   const pb=document.getElementById("predictBtn");
-  if(pb)pb.addEventListener("click",()=>{state.risk=calcRisk();state.predicted=true;render();});
+  if(pb)pb.addEventListener("click",async()=>{
+    // Show loading state
+    pb.disabled=true;
+    pb.textContent="Analyzing...";
+
+    try{
+      // Prepare request data
+      const requestData={
+        gender:state.gender,
+        age:parseFloat(state.age),
+        weight:parseFloat(state.weight),
+        height:parseFloat(state.height),
+        waist:parseFloat(state.waist),
+        pregnancies:parseInt(state.pregnancies)||0,
+        bp:parseFloat(state.bp),
+        relatives:state.relatives,
+        othersClose:state.othersClose,
+        sugar:state.sugar,
+        medicines:state.medicines
+      };
+
+      // Add hardware data if available
+      if(state.hardware_glucose!==null){
+        requestData.hardware_glucose=state.hardware_glucose;
+        requestData.hardware_glucose_confidence=state.hardware_glucose_confidence;
+      }
+      if(state.hardware_sleep_hours!==null){
+        requestData.hardware_sleep_hours=state.hardware_sleep_hours;
+      }
+
+      // Call ML prediction API
+      const resp=await fetch("/api/predict",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(requestData)
+      });
+
+      const data=await resp.json();
+
+      if(data.success){
+        // Store full prediction result
+        state.risk={
+          level:data.prediction.category,
+          color:data.prediction.category==="Low Risk"?"#4ade80":data.prediction.category==="Moderate Risk"?"#facc15":data.prediction.category==="High Risk"?"#fb923c":"#f87171",
+          pct:data.prediction.percentage,
+          probability:data.prediction.probability,
+          message:data.prediction.message,
+          clinicalSummary:data.clinical_summary,
+          riskFactors:data.risk_factors,
+          recommendations:data.recommendations,
+          futureRisk:data.future_risk,
+          inputAnalysis:data.input_analysis
+        };
+        state.predicted=true;
+      }else{
+        // Fallback to client-side calculation
+        state.risk=calcRisk();
+        state.predicted=true;
+        console.error("Prediction API error:",data.error);
+      }
+    }catch(err){
+      // Fallback to client-side calculation
+      state.risk=calcRisk();
+      state.predicted=true;
+      console.error("Prediction API error:",err);
+    }finally{
+      pb.disabled=false;
+      pb.textContent="Get Risk Assessment";
+      render();
+    }
+  });
+
+  // Risk Reduction Feature handlers
+  const showRiskReductionBtn = document.getElementById("showRiskReductionBtn");
+  if (showRiskReductionBtn) {
+    showRiskReductionBtn.addEventListener("click", () => {
+      state.show_risk_reduction = true;
+      render();
+    });
+  }
+
+  const hideRiskReductionBtn = document.getElementById("hideRiskReductionBtn");
+  if (hideRiskReductionBtn) {
+    hideRiskReductionBtn.addEventListener("click", () => {
+      state.show_risk_reduction = false;
+      state.risk_suggestions = null;
+      state.suggestions_error = null;
+      render();
+    });
+  }
+
+  const getSuggestionsBtn = document.getElementById("getSuggestionsBtn");
+  if (getSuggestionsBtn) {
+    getSuggestionsBtn.addEventListener("click", async () => {
+      state.loading_suggestions = true;
+      state.suggestions_error = null;
+      render();
+
+      try {
+        const response = await fetch("/api/risk-reduction-suggestions", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            prediction_data: {
+              prediction: {
+                probability: state.risk.probability,
+                percentage: state.risk.pct,
+                category: state.risk.level
+              },
+              risk_factors: state.risk.riskFactors || [],
+              input_analysis: state.risk.inputAnalysis || {}
+            }
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          state.risk_suggestions = data.suggestions;
+          state.suggestions_error = null;
+        } else {
+          state.suggestions_error = data.error || "Failed to get suggestions";
+          if (data.fallback_suggestions) {
+            // Format fallback suggestions nicely
+            const fallback = data.fallback_suggestions;
+            let suggestions = "Here are some general recommendations based on your risk profile:\n\n";
+
+            if (fallback.lifestyle?.length) {
+              suggestions += "🌱 LIFESTYLE MODIFICATIONS:\n";
+              fallback.lifestyle.forEach((item, i) => {
+                suggestions += `${i + 1}. ${item}\n`;
+              });
+              suggestions += "\n";
+            }
+
+            if (fallback.monitoring?.length) {
+              suggestions += "📊 MONITORING RECOMMENDATIONS:\n";
+              fallback.monitoring.forEach((item, i) => {
+                suggestions += `${i + 1}. ${item}\n`;
+              });
+              suggestions += "\n";
+            }
+
+            if (fallback.medical?.length) {
+              suggestions += "🏥 MEDICAL CARE:\n";
+              fallback.medical.forEach((item, i) => {
+                suggestions += `${i + 1}. ${item}\n`;
+              });
+            }
+
+            suggestions += "\n⚠️ Note: These are general recommendations. Please consult with your healthcare provider for personalized medical advice.";
+
+            state.risk_suggestions = suggestions;
+            state.suggestions_error = null;
+          }
+        }
+      } catch (error) {
+        state.suggestions_error = `Network error: ${error.message}`;
+      } finally {
+        state.loading_suggestions = false;
+        render();
+      }
+    });
+  }
+
+  const retrySuggestionsBtn = document.getElementById("retrySuggestionsBtn");
+  if (retrySuggestionsBtn) {
+    retrySuggestionsBtn.addEventListener("click", () => {
+      state.suggestions_error = null;
+      render();
+    });
+  }
+
+  const newSuggestionsBtn = document.getElementById("newSuggestionsBtn");
+  if (newSuggestionsBtn) {
+    newSuggestionsBtn.addEventListener("click", () => {
+      state.risk_suggestions = null;
+      state.suggestions_error = null;
+      render();
+    });
+  }
+
+  const hideSuggestionsBtn = document.getElementById("hideSuggestionsBtn");
+  if (hideSuggestionsBtn) {
+    hideSuggestionsBtn.addEventListener("click", () => {
+      state.risk_suggestions = null;
+      render();
+    });
+  }
+
   // Reset
   const rb=document.getElementById("resetBtn");
   if(rb)rb.addEventListener("click",()=>{
-    Object.assign(state,{step:1,predicted:false,risk:null,errors:{},animDir:"fwd",gender:"",age:"",weight:"",height:"",waist:"",pregnancies:"",bp:"",glucose:"",relatives:[],othersClose:null,sugar:"",medicines:[]});
+    Object.assign(state,{
+      step:1,predicted:false,risk:null,errors:{},animDir:"fwd",
+      gender:"",age:"",weight:"",height:"",waist:"",pregnancies:"",bp:"",glucose:"",
+      relatives:[],othersClose:null,sugar:"",medicines:[],
+      hardware_glucose:null,hardware_glucose_confidence:"unknown",
+      hardware_glucose_level:"",hardware_glucose_rgb:"",hardware_glucose_distance:"",
+      hardware_sleep_hours:null,hardware_activity_level:null,hardware_activity_label:"",
+      show_hardware_modal:false,hardware_reading_glucose:false,hardware_reading_sleep:false,
+      hardware_current_view:null,hardware_error:null,
+      // Reset risk reduction state
+      show_risk_reduction:false,risk_suggestions:null,
+      loading_suggestions:false,suggestions_error:null
+    });
     renderProg();render("bck");
   });
 }

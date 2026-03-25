@@ -1,23 +1,27 @@
-include <Wire.h>
+#include <Wire.h>
 #include <Adafruit_TCS34725.h>
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
-#define LED_PIN      13   // Arduino Leonardo built-in LED
-#define SENSOR_LED   6    // TCS34725 LED pin → connect to D6 (active LOW)
+#define LED_PIN      13
+#define SENSOR_LED   6
+
+#define SAMPLE_COUNT     20      // number of readings to average
+#define SAMPLE_DELAY_MS  250     // ms between each reading → 20 × 250 = 5 000 ms total
+#define LOW_CONFIDENCE_DIST  20.0
 
 struct GlucoseRef {
   const char* label;
   uint8_t r, g, b;
+  bool isNoStrip;
 };
 
 const GlucoseRef LEVELS[] = {
-  { "Normal — No glucose detected",           151, 208, 199 },
-  { "~100 mg/dL  ( ~5 mmol/L )  (+)",         130, 198, 151 },
-  { "~250 mg/dL  (~15 mmol/L)  (++)",          106, 173,  78 },
-  { "~500 mg/dL  (~30 mmol/L)  (+++)",         147, 128,   7 },
-  { "~1000 mg/dL (~60 mmol/L)  (++++)",        151, 104,  50 },
-  { ">=2000 mg/dL (~110 mmol/L) (++++)",       125,  79,  45 }
+  { "!! NO STRIP DETECTED !!",                119,  82,  56,  true  },
+  { "Normal — No glucose detected",           104,  87,  56,  false },
+  { "Low glucose    (~100 mg/dL)   (+)",      108,  86,  55,  false },
+  { "Medium glucose (~250 mg/dL)   (++)",     114,  82,  50,  false },
+  { "High glucose   (~500+ mg/dL)  (+++)",    117,  80,  50,  false }
 };
 const int NUM_LEVELS = sizeof(LEVELS) / sizeof(LEVELS[0]);
 
@@ -30,10 +34,9 @@ int normalise(uint16_t channel, uint16_t clear) {
   return constrain((int)((float)channel / clear * 255.0), 0, 255);
 }
 
-// ── Turn both LEDs ON or OFF together ─────────────────────────────────────
 void setLEDs(bool state) {
-  digitalWrite(LED_PIN, state ? HIGH : LOW);
-  digitalWrite(SENSOR_LED, state ? LOW : HIGH);  // TCS34725 LED is active LOW
+  digitalWrite(LED_PIN,    state ? HIGH : LOW);
+  digitalWrite(SENSOR_LED, state ? HIGH  : LOW);
 }
 
 void setup() {
@@ -42,7 +45,7 @@ void setup() {
 
   pinMode(LED_PIN,    OUTPUT);
   pinMode(SENSOR_LED, OUTPUT);
-  setLEDs(false);  // both off initially
+  setLEDs(false);
 
   if (!tcs.begin()) {
     Serial.println(F("ERROR: TCS34725 not found! Check SDA/SCL wiring."));
@@ -59,41 +62,54 @@ void setup() {
   while (!Serial.available());
   while (Serial.available()) Serial.read();
 
-  // ── Step 1: Both LEDs ON ─────────────────────────────────────────────────
   Serial.println(F("\n[1/3] Both LEDs ON — illuminating strip..."));
   setLEDs(true);
+  delay(500);   // short settle before sampling begins
 
-  // ── Step 2: 2-second settle ──────────────────────────────────────────────
-  Serial.println(F("[2/3] Waiting 2 seconds for stable reading..."));
-  for (int i = 2; i > 0; i--) {
-    Serial.print(i);
-    Serial.println(F("..."));
-    delay(1000);
+  // ── 5-second averaging loop ──────────────────────────────────────────────
+  Serial.print(F("[2/3] Averaging "));
+  Serial.print(SAMPLE_COUNT);
+  Serial.println(F(" readings over 5 seconds..."));
+
+  long sumR = 0, sumG = 0, sumB = 0, sumC = 0;
+
+  for (int i = 0; i < SAMPLE_COUNT; i++) {
+    uint16_t r, g, b, c;
+    tcs.getRawData(&r, &g, &b, &c);
+    sumR += r;  sumG += g;  sumB += b;  sumC += c;
+
+    // Print a live progress dot every 5 samples
+    if ((i + 1) % 5 == 0) {
+      Serial.print(F("  Sample "));
+      Serial.print(i + 1);
+      Serial.print(F(" / "));
+      Serial.println(SAMPLE_COUNT);
+    }
+    delay(SAMPLE_DELAY_MS);
   }
 
-  // ── Step 3: Read ─────────────────────────────────────────────────────────
-  Serial.println(F("[3/3] Capturing colour..."));
+  setLEDs(false);
 
-  uint16_t r, g, b, c;
-  tcs.getRawData(&r, &g, &b, &c);
+  // Compute averages
+  uint16_t avgR = sumR / SAMPLE_COUNT;
+  uint16_t avgG = sumG / SAMPLE_COUNT;
+  uint16_t avgB = sumB / SAMPLE_COUNT;
+  uint16_t avgC = sumC / SAMPLE_COUNT;
 
-  setLEDs(false);  // both off after capture
+  Serial.println(F("[3/3] Computing average..."));
 
-  int rn = normalise(r, c);
-  int gn = normalise(g, c);
-  int bn = normalise(b, c);
+  int rn = normalise(avgR, avgC);
+  int gn = normalise(avgG, avgC);
+  int bn = normalise(avgB, avgC);
 
-  Serial.println(F("\n--- Sensor Reading ---"));
-  Serial.print(F("Raw RGBC  : R="));
-  Serial.print(r); Serial.print(F("  G="));
-  Serial.print(g); Serial.print(F("  B="));
-  Serial.print(b); Serial.print(F("  C="));
-  Serial.println(c);
-
-  Serial.print(F("Normalised: R="));
-  Serial.print(rn); Serial.print(F("  G="));
-  Serial.print(gn); Serial.print(F("  B="));
-  Serial.println(bn);
+  Serial.println(F("\n--- Averaged Sensor Reading ---"));
+  Serial.print(F("Avg Raw RGBC  : R=")); Serial.print(avgR);
+  Serial.print(F("  G="));               Serial.print(avgG);
+  Serial.print(F("  B="));               Serial.print(avgB);
+  Serial.print(F("  C="));               Serial.println(avgC);
+  Serial.print(F("Avg Normalised: R=")); Serial.print(rn);
+  Serial.print(F("  G="));               Serial.print(gn);
+  Serial.print(F("  B="));               Serial.println(bn);
 
   float minDist = 1e9;
   int   bestIdx = 0;
@@ -106,27 +122,29 @@ void setup() {
     Serial.print(LEVELS[i].label);
     Serial.print(F("  →  dist = "));
     Serial.println(d, 1);
-
-    if (d < minDist) {
-      minDist = d;
-      bestIdx = i;
-    }
+    if (d < minDist) { minDist = d; bestIdx = i; }
   }
 
   Serial.println(F("\n========================================="));
   Serial.println(F("            RESULT"));
   Serial.println(F("========================================="));
-  Serial.print(F("  Glucose Level : "));
-  Serial.println(LEVELS[bestIdx].label);
-  Serial.print(F("  Match distance: "));
-  Serial.println(minDist, 1);
 
-  if (minDist > 55.0) {
-    Serial.println(F("\n  WARNING: Low confidence match."));
-    Serial.println(F("  Centre the strip pad over the sensor"));
-    Serial.println(F("  or allow more strip reaction time."));
+  if (LEVELS[bestIdx].isNoStrip) {
+    Serial.println(F("  !! NO STRIP DETECTED !!"));
+    Serial.println(F("  Place the glucose pad directly over"));
+    Serial.println(F("  the sensor and reset to try again."));
   } else {
-    Serial.println(F("\n  Good colour match."));
+    Serial.print(F("  Glucose Level : "));
+    Serial.println(LEVELS[bestIdx].label);
+    Serial.print(F("  Match distance: "));
+    Serial.println(minDist, 1);
+
+    if (minDist > LOW_CONFIDENCE_DIST) {
+      Serial.println(F("\n  WARNING: Low confidence match."));
+      Serial.println(F("  Re-centre the strip pad and retry."));
+    } else {
+      Serial.println(F("\n  Good colour match."));
+    }
   }
 
   Serial.println(F("========================================="));
