@@ -892,6 +892,22 @@ function renderResult(){
   if(recs.length===0) recs.push("Keep up the great work! Maintain a balanced diet and regular health checkups.");
   const renderRecs = recs.map((r,i)=>`<li style="margin-bottom:8px;display:flex;gap:8px;"><span style="color:var(--gn);font-weight:bold;">${i+1}.</span> <span style="flex:1">${r}</span></li>`).join("");
 
+  // --- Future Risk Projection Section ---
+  let futureRiskHtml = "";
+  if (state.risk && state.risk.future_risk && state.risk.future_risk.projections) {
+    const proj = state.risk.future_risk.projections;
+    const order = ["1_year", "3_year", "5_year", "10_year"];
+    futureRiskHtml = `<div class="fbox" style="background:rgba(250,204,21,.05);border-color:rgba(250,204,21,.18);margin-bottom:18px;">
+      <div class="ftitle" style="color:var(--ye);">📈 Future Risk Projection</div>
+      <div style="font-size:14px;line-height:1.7;">
+        ${order.filter(k=>proj[k]).map(k=>{
+          const p=proj[k];
+          return `<div><b>${k.replace("_year"," year")}</b>: <span style="color:${p.category==="Very High"?"#f87171":p.category==="High"?"#fb923c":p.category==="Moderate"?"#facc15":"#4ade80"}">${p.percentage}%</span> <span style="font-size:12px;color:var(--mu);">(${p.category})</span></div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
   return sth("🔬","Risk Assessment Result","Based on your complete health profile")+
   `<div class="rmain">
     <div>
@@ -921,6 +937,7 @@ function renderResult(){
       </div>
     </div>
   </div>
+  ${futureRiskHtml}
   <div class="fbox">
     <div class="ftitle">⚡ Detected Risk Factors</div>
     <div class="flist">${factors.map(f=>`<span class="ftag" style="color:${f.c};background:${f.c}12;border:1px solid ${f.c}30">${f.t}</span>`).join("")}</div>
@@ -1357,6 +1374,7 @@ function attach(){
           riskFactors:data.risk_factors,
           recommendations:data.recommendations,
           futureRisk:data.future_risk,
+          future_risk:data.future_risk, // Add snake_case for frontend compatibility
           inputAnalysis:data.input_analysis
         };
         state.predicted=true;
