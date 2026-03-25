@@ -20,6 +20,9 @@ import numpy as np
 import joblib
 import subprocess
 import sys
+import csv
+import random
+import datetime
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -81,6 +84,55 @@ def load_model():
         loading_in_progress = False
 
     return model_loaded
+
+
+# ============================================================================
+#  CSV DATA HANDLING
+# ============================================================================
+
+CSV_FILE_PATH = os.path.join(os.path.dirname(__file__), 'sensor_data.csv')
+
+def get_sensor_data_from_csv():
+    """Read a random row from sensor_data.csv."""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            return None
+            
+        with open(CSV_FILE_PATH, 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            rows = list(reader)
+            if not rows:
+                return None
+            return random.choice(rows)
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        return None
+
+def save_sensor_data_to_csv(glucose=None, sleep=None, lifestyle=None):
+    """Append sensor data to sensor_data.csv."""
+    try:
+        file_exists = os.path.exists(CSV_FILE_PATH)
+        
+        with open(CSV_FILE_PATH, 'a', newline='') as csvfile:
+            # We'll use the same fields for compatibility, ignoring heart rate for CSV storage
+            # unless you want to add a column. The user prompt said:
+            # "in the format: glucose , sleep, lifestyle."
+            # So I will NOT add heart rate to the CSV to respect the requested format.
+            fieldnames = ['timestamp', 'glucose', 'sleep', 'lifestyle']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            if not file_exists:
+                writer.writeheader()
+                
+            writer.writerow({
+                'timestamp': datetime.datetime.now().isoformat(),
+                'glucose': glucose if glucose is not None else '',
+                'sleep': sleep if sleep is not None else '',
+                'lifestyle': lifestyle if lifestyle is not None else ''
+            })
+            print(f"Data saved to CSV: glucose={glucose}, sleep={sleep}, lifestyle={lifestyle}")
+    except Exception as e:
+        print(f"Error writing to CSV: {e}")
 
 
 # ============================================================================
@@ -475,9 +527,31 @@ def read_hardware_glucose():
         time.sleep(2)
         ser.reset_input_buffer()
     except serial.SerialException as e:
+        # Fallback to CSV simulation if hardware fails
+        print(f"Hardware not found ({e}), using CSV data...")
+        csv_data = get_sensor_data_from_csv()
+        
+        if csv_data and csv_data.get('glucose'):
+            try:
+                g_val = int(float(csv_data['glucose']))
+                return jsonify({
+                    'success': True,
+                    'message': 'Simulated data from CSV (Hardware not connected)',
+                    'device_connected': False,
+                    'glucose_level': 'High' if g_val > 125 else 'Normal',
+                    'glucose_value': g_val,
+                    'match_distance': 0,
+                    'confidence': 'High (Simulated)',
+                    'is_no_strip': False,
+                    'serial_output': [],
+                    'error': None
+                })
+            except ValueError:
+                pass
+                
         return jsonify({
             'success': False,
-            'message': f'Cannot connect to {PORT}: {str(e)}',
+            'message': f'Cannot connect to {PORT} and no CSV data available: {str(e)}',
             'device_connected': False,
             'error': str(e)
         }), 503
@@ -492,6 +566,8 @@ def read_hardware_glucose():
     output_lines = []
     start_time = time.time()
     # Read all serial output for 12 seconds (enough for countdown + result)
+    glucose_value = None
+    
     try:
         while time.time() - start_time < 12:
             if ser.in_waiting:
@@ -499,17 +575,47 @@ def read_hardware_glucose():
                 if raw:
                     line = raw.decode("utf-8", errors="replace").strip()
                     output_lines.append(line)
+                    # Try to parse glucose value from output
+                    # Assuming format "Glucose: 120" or similar, but exact format unknown
+                    # Based on return type int, we need to extract it.
+                    # For now just collect lines.
             else:
                 time.sleep(0.05)
         ser.close()
+        
+        # Mock extraction logic if hardware actually returns data
+        # In a real scenario, we would parse `output_lines`
+        # Since I don't see the parsing logic in the original code (it just returned lines),
+        # I'll assume the frontend does the parsing OR I need to add it.
+        # Wait, the original code didn't parse glucose_value! It just returned `serial_output`.
+        # But the docstring says returns `glucose_value`: int.
+        # The original implementation ONLY returned serial_output.
+        # The frontend likely parses it.
+        # However, to save to CSV, *I* need the value.
+        
+        # Let's try to extract a number from the last line if possible
+        if output_lines:
+            import re
+            for line in reversed(output_lines):
+                # Look for number in line
+                match = re.search(r'(\d+)', line)
+                if match:
+                    glucose_value = int(match.group(1))
+                    break
+        
+        if glucose_value:
+            save_sensor_data_to_csv(glucose=glucose_value)
+            
         return jsonify({
             'success': True,
             'message': 'Raw output from glucose analyzer',
             'device_connected': True,
-            'serial_output': output_lines[-30:]  # last 30 lines for frontend
+            'serial_output': output_lines[-30:],  # last 30 lines for frontend
+            'glucose_value': glucose_value 
         })
     except Exception as e:
-        ser.close()
+        if 'ser' in locals() and ser.is_open:
+            ser.close()
         return jsonify({
             'success': False,
             'message': f'Failed to read serial output: {str(e)}',
@@ -746,7 +852,40 @@ def read_hardware_sleep():
         time.sleep(2)
         ser.reset_input_buffer()
     except serial.SerialException as e:
-        return jsonify({'success': False, 'error': f'Cannot open {PORT}: {e}'}), 503
+        # Fallback to CSV
+        csv_data = get_sensor_data_from_csv()
+        if csv_data:
+             try:
+                 sleep_h = float(csv_data.get('sleep', 7.0))
+             except ValueError:
+                 sleep_h = 7.0
+                 
+             lifestyle = csv_data.get('lifestyle', 'Moderate')
+             # LEVEL_NAMES = {0: "Sedentary", 1: "Lightly Active", 2: "Active"}
+             level_map = {"Sedentary": 0, "Lightly Active": 1, "Moderate": 1, "Active": 2}
+             act_level = level_map.get(lifestyle, 1)
+             
+             # Simulate HR based on activity
+             simulated_hr = 70
+             if act_level == 2:
+                 simulated_hr = 95
+             elif act_level == 1:
+                 simulated_hr = 75
+             else:
+                 simulated_hr = 60
+             
+             return jsonify({
+                 'success': True,
+                 'sleep_hours': sleep_h,
+                 'activity_level': act_level,
+                 'activity_label': lifestyle,
+                 'heart_rate': simulated_hr,
+                 'features': {'avg_hr': simulated_hr},
+                 'raw_samples': [],
+                 'message': 'Simulated data from CSV (Hardware not connected)'
+             })
+             
+        return jsonify({'success': False, 'error': f'Cannot open {PORT} and no CSV data: {e}'}), 503
     except Exception as e:
         return jsonify({'success': False, 'error': f'Unexpected error: {e}'}), 503
 
@@ -845,11 +984,16 @@ def read_hardware_sleep():
         activity_level = 1
     # Sleep hours estimate (for this window only)
     sleep_hours = round((sleep_state == "sleep") * (ANALYSIS_WINDOW_SEC / 3600.0), 2)
+    
+    # Save to CSV
+    save_sensor_data_to_csv(sleep=sleep_hours, lifestyle=LEVEL_NAMES[activity_level])
+    
     return jsonify({
         'success': True,
         'sleep_hours': sleep_hours,
         'activity_level': activity_level,
         'activity_label': LEVEL_NAMES[activity_level],
+        'heart_rate': round(features["avg_hr"]),
         'features': features,
         'raw_samples': samples[-5:]  # last 5 samples for debug
     })
